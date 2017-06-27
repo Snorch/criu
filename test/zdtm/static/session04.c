@@ -22,12 +22,13 @@ struct process
 {
 	pid_t pid;
 	pid_t sid;
+	pid_t pgid;
 	int sks[2];
 	int dead;
 };
 
 struct process *processes;
-int nr_processes = 21;
+int nr_processes = 26;
 int current = 0;
 
 static void cleanup()
@@ -46,6 +47,8 @@ enum commands
 	TEST_DIE,
 	TEST_GETSID,
 	TEST_SETNS,
+	TEST_SETPGID,
+	TEST_GETPGID,
 };
 
 struct command
@@ -229,6 +232,19 @@ static void handle_command()
 		if(status == -1)
 			pr_perror("getsid");
 		break;
+	case TEST_SETPGID:
+		test_msg("%3d: setpgid(%d, %d)\n", current, cmd.arg1, cmd.arg2);
+		if(setpgid(processes[cmd.arg1].pid, processes[cmd.arg2].pid) == -1) {
+			pr_perror("setpgid");
+			status = -1;
+		}
+		break;
+	case TEST_GETPGID:
+		test_msg("%3d: getpgid()\n", current);
+		status = getpgid(0);
+		if(status == -1)
+			pr_perror("getpgid");
+		break;
 	case TEST_SETNS:
 		test_msg("%3d: setns(%d, %d) = %d\n", current,
 				cmd.arg1, cmd.arg2, processes[cmd.arg1].pid);
@@ -282,7 +298,7 @@ static int send_command(int id, enum commands op, int arg1, int arg2)
 		goto err;
 	}
 
-	if (status != -1 && op == TEST_GETSID)
+	if (status != -1 && (op == TEST_GETSID || op == TEST_GETPGID))
 		return status;
 
 	if (status) {
@@ -382,6 +398,21 @@ int main(int argc, char ** argv)
 	send_command(19, TEST_DIE,	0, 0);
 	send_command(15, TEST_WAIT,	19, 0);
 
+	/*
+	 * Pgid
+	 */
+	send_command(1, TEST_FORK,	21, 0);
+	send_command(21, TEST_SETSID,	0, 0);
+	send_command(21, TEST_FORK,	22, 0);
+	send_command(21, TEST_SETPGID,	22, 22);
+	send_command(22, TEST_FORK,	23, 0);
+	send_command(22, TEST_SETPGID,	23, 23);
+	send_command(21, TEST_FORK,	24, 0);
+	send_command(21, TEST_SETPGID,	24, 22);
+	send_command(21, TEST_SETPGID,	22, 23);
+	send_command(24, TEST_FORK,	25, CLONE_NEWPID);
+	send_command(24, TEST_SETPGID,	25, 25);
+
 	for (i = 0; i < nr_processes; i++) {
 		if (processes[i].dead)
 			continue;
@@ -393,6 +424,12 @@ int main(int argc, char ** argv)
 			pr_perror("getsid(%d)", i);
 			goto err;
 		}
+
+		processes[i].pgid = send_command(i, TEST_GETPGID, 0, 0);
+		if (processes[i].pgid == -1) {
+			pr_perror("getpgid(%d)", i);
+			goto err;
+		}
 	}
 
 	test_daemon();
@@ -400,7 +437,7 @@ int main(int argc, char ** argv)
 	test_waitsig();
 
 	for (i = 0; i < nr_processes; i++) {
-		pid_t sid;
+		pid_t sid, pgid;
 
 		if (processes[i].dead)
 			continue;
@@ -416,6 +453,18 @@ int main(int argc, char ** argv)
 		if (sid != processes[i].sid) {
 			fail("%d, %d: wrong sid %d (expected %d)",
 				i, processes[i].pid, sid, processes[i].sid);
+			fail_cnt++;
+		}
+
+		pgid = send_command(i, TEST_GETPGID, 0, 0);
+		if (pgid == -1) {
+			pr_perror("getpgid(%d)", i);
+			goto err;
+		}
+
+		if (pgid != processes[i].pgid) {
+			fail("%d, %d: wrong pgid %d (expected %d)",
+				i, processes[i].pid, pgid, processes[i].pgid);
 			fail_cnt++;
 		}
 	}
