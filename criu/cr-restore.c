@@ -1685,40 +1685,108 @@ static int setup_current_pid_ns(void)
 	return create_pid_ns_helper(ns);
 }
 
+static int can_get_sid(struct pstree_item *item)
+{
+	struct pstree_item *parent = item->parent;
+	pid_t born_sid;
+
+	if (item->born_sid == -1 && is_session_leader(item))
+		return 1;
+
+	born_sid = item->born_sid != -1 ? item->born_sid : vsid(item);
+
+	if (born_sid == rsti(parent)->curr_sid)
+		return 1;
+
+	return 0;
+}
+
+/* Check if item's pidns helper is already created */
+static int can_get_pidns(struct pstree_item *item)
+{
+	struct ns_id *pid_ns;
+
+	if (!(root_ns_mask & CLONE_NEWPID))
+		return 1;
+
+	pid_ns = lookup_ns_by_id(item->ids->pid_ns_id, &pid_ns_desc);
+	BUG_ON(!pid_ns);
+
+	/* For init task check helper created for parent pidns */
+	if (last_level_pid(item->pid) == INIT_PID) {
+		if (!pid_ns->parent)
+			return 1;
+		pid_ns = pid_ns->parent;
+	}
+
+	if (futex_get(&pid_ns->pid.helper_created) == 1)
+		return 1;
+
+	return 0;
+}
+
+/*
+ * Fork children if possible, and return
+ * the number of not yet forked children
+ * in current session
+ */
+
+static int fork_children_loop(void) {
+	struct pstree_item *child;
+	int ret, sid_children_left = 0;
+
+	list_for_each_entry(child, &current->children, sibling) {
+		if (rsti(child)->forked)
+			continue;
+
+		/* Can't inherit sid */
+		if (!can_get_sid(child)) {
+			BUG_ON(rsti(current)->curr_sid == vsid(current));
+			continue;
+		}
+		sid_children_left++;
+
+		/* Pidns is not created yet */
+		if (!can_get_pidns(child))
+			continue;
+
+		ret = fork_with_pid(child);
+		if (ret < 0)
+			return ret;
+		sid_children_left--;
+	}
+
+	return sid_children_left;
+}
+
 /*
  * Tasks cannot change sid (session id) arbitrary, but can either
  * inherit one from ancestor, or create a new one with id equal to
  * their pid. Thus sid-s restore is tied with children creation.
+ *
+ * Entering pidns via setns only works if pidns is already created
+ * so if we have two children - one which is init of pidns and other
+ * setns'ed to these pidns, we can not block waiting for pidns creation
+ * on the second task as no one but us can create the pidns init for it.
  */
 
-static int create_children_and_session(void)
+static int create_children(void)
 {
-	int ret;
-	struct pstree_item *child;
+	int sid_children_left;
 
-	pr_info("Restoring children in alien sessions:\n");
-	list_for_each_entry(child, &current->children, sibling) {
-		if (!restore_before_setsid(child))
-			continue;
+again:
+	sid_children_left = fork_children_loop();
+	if (sid_children_left < 0)
+		return sid_children_left;
 
-		BUG_ON(child->born_sid != -1 && getsid(getpid()) != child->born_sid);
-
-		ret = fork_with_pid(child);
-		if (ret < 0)
-			return ret;
+	if (sid_children_left != 0) {
+		/* wait pidns creation */
+		goto again;
 	}
 
-	if (current->parent)
+	if (rsti(current)->curr_sid != vsid(current)) {
 		restore_sid();
-
-	pr_info("Restoring children in our session:\n");
-	list_for_each_entry(child, &current->children, sibling) {
-		if (restore_before_setsid(child))
-			continue;
-
-		ret = fork_with_pid(child);
-		if (ret < 0)
-			return ret;
+		goto again;
 	}
 
 	return 0;
@@ -1845,7 +1913,7 @@ static int restore_task_with_children(void *_arg)
 
 	timing_start(TIME_FORK);
 
-	if (create_children_and_session())
+	if (create_children())
 		goto err;
 
 	timing_stop(TIME_FORK);
