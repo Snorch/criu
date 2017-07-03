@@ -2721,6 +2721,7 @@ static int do_create_pid_ns_helper(void *arg, int sk, pid_t unused_pid)
 		goto restore_ns;
 	}
 	futex_set_and_wake(&ns->pid.helper_created, 1);
+	futex_dec_and_wake(&task_entries->nr_pidns_left);
 	pid->real = child;
 
 	ret = 0;

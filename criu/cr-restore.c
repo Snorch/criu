@@ -1780,7 +1780,13 @@ again:
 		return sid_children_left;
 
 	if (sid_children_left != 0) {
-		/* wait pidns creation */
+		int nr_pidns = futex_get(&task_entries->nr_pidns_left);
+
+		/* Wait some pidns created for our children */
+		if (nr_pidns > 0) {
+			pr_info("%d waits for for children pidns created\n", vpid(current));
+			futex_wait_while_eq(&task_entries->nr_pidns_left, nr_pidns);
+		}
 		goto again;
 	}
 
@@ -2469,6 +2475,9 @@ out:
 
 int prepare_task_entries(void)
 {
+	struct ns_id *ns;
+	int nr_pidns = 0;
+
 	task_entries_pos = rst_mem_align_cpos(RM_SHREMAP);
 	task_entries = rst_mem_alloc(sizeof(*task_entries), RM_SHREMAP);
 	if (!task_entries) {
@@ -2482,6 +2491,11 @@ int prepare_task_entries(void)
 	futex_set(&task_entries->start, CR_STATE_FAIL);
 	mutex_init(&task_entries->userns_sync_lock);
 	mutex_init(&task_entries->last_pid_mutex);
+
+	for (ns = ns_ids; ns != NULL; ns = ns->next)
+		if (ns->nd == &pid_ns_desc)
+			nr_pidns++;
+	futex_set(&task_entries->nr_pidns_left, nr_pidns);
 
 	return 0;
 }

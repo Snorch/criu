@@ -12,6 +12,7 @@ struct task_entries {
 	atomic_t cr_err;
 	mutex_t userns_sync_lock;
 	mutex_t last_pid_mutex;
+	futex_t nr_pidns_left;
 };
 
 struct fdt {
