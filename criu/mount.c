@@ -1123,6 +1123,42 @@ static bool mnt_is_overmounted(struct mount_info *m)
 	return false;
 }
 
+/*
+ * We assume that mountpoint for mi is already visible. Problem is
+ * that the mount mi can be overmounted by it's children mounts,
+ * so we need to unmount them before we can unmount mi.
+ */
+int __umount_with_children(struct mount_info *mi) {
+	struct mount_info *m = mi, *c;
+
+	/* Search for deepest descendant which overmounts mi */
+again:
+	list_for_each_entry(c, &m->children, siblings) {
+		if (!strcmp(c->mountpoint, m->mountpoint)) {
+			m = c;
+			goto again;
+		}
+	}
+
+	/* Reverse unmout child overmounts */
+	while (m != mi) {
+		if (umount2(m->mountpoint, MNT_DETACH)) {
+			pr_perror("Unable to umount child-overmount %s", m->mountpoint);
+			return -1;
+		}
+		BUG_ON(!m->parent);
+		m = m->parent;
+	}
+
+	/* Now we can umount mi itself */
+	if (umount2(mi->mountpoint, MNT_DETACH)) {
+		pr_perror("Unable to umount %s", m->mountpoint);
+		return -1;
+	}
+
+	return 0;
+}
+
 #define MNT_UNREACHABLE INT_MIN
 int open_mountpoint(struct mount_info *pm)
 {
