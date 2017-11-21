@@ -1097,6 +1097,32 @@ static char *get_clean_mnt(struct mount_info *mi, char *mnt_path_tmp, char *mnt_
 	return mnt_path;
 }
 
+/* merge me with does_mnt_overmount and fix the latter */
+static bool mnt_is_overmounted(struct mount_info *mi)
+{
+	struct mount_info *t, *c, *m = mi;
+
+	while (m->parent) {
+		/* Check there is no sibling-overmount */
+		list_for_each_entry(t, &m->parent->children, siblings) {
+			if (m == t)
+				continue;
+			if (issubpath(m->mountpoint, t->mountpoint))
+				return true;
+		}
+
+		/* Check it for all ancestors */
+		m = m->parent;
+	}
+
+	/* Check there is no children-overmount */
+	list_for_each_entry(c, &mi->children, siblings)
+		if (!strcmp(c->mountpoint, mi->mountpoint))
+			return true;
+
+	return false;
+}
+
 #define MNT_UNREACHABLE INT_MIN
 int open_mountpoint(struct mount_info *pm)
 {
