@@ -1219,39 +1219,23 @@ next:
 	return 0;
 }
 
-#define MNT_UNREACHABLE INT_MIN
+/*
+ * For dumping fs only as it can open a private copy
+ * of the mountpoint and not the mountpoint itself.
+ */
 int open_mountpoint(struct mount_info *pm)
 {
-	struct mount_info *c;
-	int fd = -1, ns_old = -1;
 	char mnt_path_tmp[] = "/tmp/cr-tmpfs.XXXXXX";
 	char mnt_path_root[] = "/cr-tmpfs.XXXXXX";
-	char *mnt_path = mnt_path_tmp;
+	int fd = -1, ns_old = -1;
+	char *mnt_path = NULL;
 	int cwd_fd;
 
-	/*
-	 * If a mount doesn't have children, we can open a mount point,
-	 * otherwise we need to create a "private" copy.
-	 */
-	if (list_empty(&pm->children))
+	/* No overmounts and children - the entire mount is visible */
+	if (list_empty(&pm->children) && !mnt_is_overmounted(pm))
 		return __open_mountpoint(pm, -1);
 
-	pr_info("Something is mounted on top of %s\n", pm->mountpoint);
-
-	list_for_each_entry(c, &pm->children, siblings) {
-		if (!strcmp(c->mountpoint, pm->mountpoint)) {
-			pr_debug("%d:%s is overmounted\n", pm->mnt_id, pm->mountpoint);
-			return MNT_UNREACHABLE;
-		}
-	}
-
-	/*
-	 * To create a "private" copy, the target mount is bind-mounted
-	 * in a temporary place w/o MS_REC (non-recursively).
-	 * A mount point can't be bind-mounted in criu's namespace, it will be
-	 * mounted in a target namespace. The sequence of actions is
-	 * mkdtemp, setns(tgt), mount, open, detach, setns(old).
-	 */
+	pr_info("Mount is not fully visible %s\n", pm->mountpoint);
 
 	cwd_fd = open(".", O_DIRECTORY);
 	if (cwd_fd < 0) {
@@ -1262,24 +1246,34 @@ int open_mountpoint(struct mount_info *pm)
 	if (switch_ns(pm->nsid->ns_pid, &mnt_ns_desc, &ns_old) < 0)
 		goto out;
 
-	mnt_path = get_clean_mnt(pm, mnt_path_tmp, mnt_path_root);
-	if (mnt_path == NULL) {
-		/*
-		 * We probably can't create a temporary direcotry,
-		 * so we can try to clone the mount namespace, open
-		 * the required mount and destroy this mount namespace
-		 * by calling restore_ns() below in this function.
-		 */
+	/* No overmounts - bindmount pm to clean it from children */
+	if (!mnt_is_overmounted(pm))
+		mnt_path = get_clean_mnt(pm, mnt_path_tmp, mnt_path_root);
+
+	/* Enter mount nsamespace to get rid of overmounts */
+	if (!mnt_path) {
 		if (unshare(CLONE_NEWNS)) {
 			pr_perror("Unable to clone a mount namespace");
 			goto out;
 		}
 
-		fd = open(pm->mountpoint, O_RDONLY | O_DIRECTORY, 0);
-		if (fd < 0)
-			pr_perror("Can't open directory %s: %d", pm->mountpoint, fd);
-	} else
-		fd = open_detach_mount(mnt_path);
+		/*
+		 * Remount root private recursively to be able
+		 * to unmount everything we need to make pm visible
+		 */
+		if (mount("none", "/", NULL, MS_REC|MS_PRIVATE, NULL))
+			goto out;
+
+		/* Unmount overmounts */
+		if (umount_overmounts(pm))
+			goto out;
+
+		mnt_path = get_clean_mnt(pm, mnt_path_tmp, mnt_path_root);
+		if (!mnt_path)
+			goto out;
+	}
+
+	fd = open_detach_mount(mnt_path);
 	if (fd < 0)
 		goto out;
 
@@ -1287,6 +1281,7 @@ int open_mountpoint(struct mount_info *pm)
 		ns_old = -1;
 		goto out;
 	}
+
 	if (fchdir(cwd_fd)) {
 		pr_perror("Unable to restore cwd");
 		close(cwd_fd);
@@ -1434,8 +1429,6 @@ static int dump_one_fs(struct mount_info *mi)
 			continue;
 
 		ret = pm->fstype->dump(pm);
-		if (ret == MNT_UNREACHABLE)
-			continue;
 		if (ret < 0)
 			return ret;
 
