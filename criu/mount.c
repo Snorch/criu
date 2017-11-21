@@ -1153,6 +1153,86 @@ again:
 	return 0;
 }
 
+/*
+ * 1) m->parent == NULL - no overmounts
+ * 2) umount_overmounts(m->parent)
+ * 3) choose the shortest mountpoint from siblings which overmounts us
+ *
+ * FIXME Explain what is sibling-overmount and child-overmount
+ */
+int __umount_overmounts(struct mount_info *m)
+{
+	struct mount_info *t, *ovm;
+	int ovm_len, ovm_len_min = 0;
+
+	/*
+	 * We are root mount, so we have no overmounts
+	 * (except children-overmounts).
+	 */
+	if (!m->parent)
+		return 0;
+
+	/*
+	 * If parent is sibling-overmounted we are inacessible
+	 * too, so first try to unmount overmounts for parent.
+	 */
+	if (__umount_overmounts(m->parent))
+		return -1;
+
+	/*
+	 * Try to unmount sibling-overmounts
+	 */
+next:
+	ovm = NULL;
+	ovm_len = strlen(m->mountpoint) + 1;
+	list_for_each_entry(t, &m->parent->children, siblings) {
+		if (m == t)
+			continue;
+		if (issubpath(m->mountpoint, t->mountpoint)) {
+			int t_len = strlen(t->mountpoint);
+
+			/*
+			 * Choose shortest sibling overmount,
+			 * from what we have left, others
+			 * are not visible for unmount yet.
+			 */
+			if (t_len < ovm_len && t_len > ovm_len_min) {
+				ovm = t;
+				ovm_len = t_len;
+			}
+		}
+	}
+
+	if (ovm) {
+		ovm_len_min = ovm_len;
+
+		if (__umount_children_overmounts(ovm))
+			return -1;
+
+		/* Now we can umount mi itself */
+		if (umount2(ovm->mountpoint, MNT_DETACH)) {
+			pr_perror("Unable to umount %s", ovm->mountpoint);
+			return -1;
+		}
+
+		goto next;
+	}
+
+	return 0;
+}
+
+int umount_overmounts(struct mount_info *m)
+{
+	/* Unmount overmounts */
+	if (__umount_overmounts(m))
+		return -1;
+
+	if (__umount_children_overmounts(m))
+		return -1;
+
+	return 0;
+}
+
 #define MNT_UNREACHABLE INT_MIN
 int open_mountpoint(struct mount_info *pm)
 {
