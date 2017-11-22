@@ -1102,6 +1102,8 @@ static bool mnt_is_overmounted(struct mount_info *mi)
 {
 	struct mount_info *t, *c, *m = mi;
 
+	pr_info("Check if %s is overmounted\n", mi->mountpoint);
+
 	while (m->parent) {
 		/* Check there is no sibling-overmount */
 		list_for_each_entry(t, &m->parent->children, siblings) {
@@ -1109,10 +1111,12 @@ static bool mnt_is_overmounted(struct mount_info *mi)
 				continue;
 			if (issubpath(m->mountpoint, t->mountpoint))
 				return true;
+			pr_info("\t\tSibling %s is not overmount\n", t->mountpoint);
 		}
 
 		/* Check it for all ancestors */
 		m = m->parent;
+		pr_info("\tGo to parent %s\n", m->mountpoint);
 	}
 
 	/* Check there is no children-overmount */
@@ -1130,6 +1134,8 @@ static bool mnt_is_overmounted(struct mount_info *mi)
  */
 int __umount_children_overmounts(struct mount_info *mi) {
 	struct mount_info *m = mi, *c;
+
+	pr_info("Umount with children %s\n", mi->mountpoint);
 
 	/* Search for deepest descendant which overmounts mi */
 again:
@@ -1164,6 +1170,8 @@ int __umount_overmounts(struct mount_info *m)
 {
 	struct mount_info *t, *ovm;
 	int ovm_len, ovm_len_min = 0;
+
+	pr_info("Umount overmounts for %s\n", m->mountpoint);
 
 	/*
 	 * We are root mount, so we have no overmounts
@@ -1201,6 +1209,7 @@ next:
 				ovm_len = t_len;
 			}
 		}
+		pr_info("\t\t[u]Sibling %s is not overmount\n", t->mountpoint);
 	}
 
 	if (ovm) {
@@ -1264,6 +1273,7 @@ int open_mountpoint(struct mount_info *pm)
 	if (!mnt_is_overmounted(pm))
 		mnt_path = get_clean_mnt(pm, mnt_path_tmp, mnt_path_root);
 
+	pr_info("DEBUG mnt_path = %s\n", mnt_path ? : "NULL");
 	/* Enter mount nsamespace to get rid of overmounts */
 	if (!mnt_path) {
 		if (unshare(CLONE_NEWNS)) {
