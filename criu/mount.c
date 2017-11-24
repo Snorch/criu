@@ -643,6 +643,9 @@ static bool does_mnt_overmount(struct mount_info *m)
 			return true;
 	}
 
+	if (!strcmp(m->mountpoint, m->parent->mountpoint))
+		return true;
+
 	return false;
 }
 
