@@ -353,7 +353,7 @@ int set_proc_fd(int fd)
 	return 0;
 }
 
-static int open_proc_sfd(char *path)
+int open_proc_sfd(char *path)
 {
 	int fd, ret;
 

@@ -28,6 +28,7 @@
 #include "external.h"
 #include "fdstore.h"
 #include "clone-noasan.h"
+#include "proc_parse.h"
 
 #include "images/mnt.pb-c.h"
 
@@ -1149,6 +1150,32 @@ static bool mnt_is_overmounted(struct mount_info *mi)
 	return false;
 }
 
+static bool can_umount(struct mount_info *mi)
+{
+	int fd, mnt_id;
+
+	fd = open(mi->mountpoint, O_PATH);
+	if (fd == -1) {
+		pr_perror("Can't open %s", mi->mountpoint);
+		return false;
+	}
+
+	if (get_fd_mntid(fd, &mnt_id)) {
+		pr_err("Can't get mntid for %s\n", mi->mountpoint);
+		goto err;
+	}
+
+	if (mnt_id != mi->mnt_id) {
+		pr_err("Mntid for %s should be %d but is %d\n", mi->mountpoint, mi->mnt_id, mnt_id);
+		goto err;
+	}
+
+	return true;
+err:
+	close(fd);
+	return false;
+}
+
 /*
  * __umount_children_overmounts() assumes that the mountpoint and
  * it's ancestors have no sibling-overmounts, so we can see children
@@ -1173,6 +1200,11 @@ again:
 
 	/* Unmout children-overmounts in the order of visibility */
 	while (m != mi) {
+		if (can_umount(m)) {
+			pr_err("Want to unmount wrong mount. Sibling overmount with same mountpoint?\n");
+			return -1;
+		}
+
 		if (umount2(m->mountpoint, MNT_DETACH)) {
 			pr_perror("Unable to umount child-overmount %s", m->mountpoint);
 			return -1;
@@ -1224,6 +1256,11 @@ next:
 		/* Our sibling-overmount can have children-overmount covering it */
 		if (__umount_children_overmounts(ovm))
 			return -1;
+
+		if (can_umount(ovm)) {
+			pr_err("Want to unmount wrong mount. Sibling overmount with same mountpoint?\n");
+			return -1;
+		}
 
 		if (umount2(ovm->mountpoint, MNT_DETACH)) {
 			pr_perror("Unable to umount %s", ovm->mountpoint);
@@ -1290,7 +1327,7 @@ err:
 
 int open_mountpoint(struct mount_info *pm)
 {
-	int fd, cwd_fd, ns_old = -1;
+	int fd, cwd_fd, dfd, ns_old = -1;
 
 	/* No overmounts and children - the entire mount is visible */
 	if (list_empty(&pm->children) && !mnt_is_overmounted(pm))
@@ -1313,6 +1350,16 @@ int open_mountpoint(struct mount_info *pm)
 	if (cwd_fd < 0) {
 		pr_perror("Unable to open cwd");
 		return -1;
+	}
+
+	/*
+	 * Pre-open proc service fd to be able to use get_fd_mntid()
+	 * in non-init mount namespace in can_umount check.
+	 */
+	dfd = get_service_fd(PROC_FD_OFF);
+	if (dfd < 0) {
+		if (open_proc_sfd("/proc") < 0)
+			return -1;
 	}
 
 	if (switch_ns(pm->nsid->ns_pid, &mnt_ns_desc, &ns_old) < 0)

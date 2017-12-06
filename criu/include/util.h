@@ -59,6 +59,7 @@ extern int reopen_fd_as_safe(char *file, int line, int new_fd, int old_fd, bool 
 extern void close_proc(void);
 extern int open_pid_proc(pid_t pid);
 extern int close_pid_proc(void);
+extern int open_proc_sfd(char *path);
 extern int set_proc_fd(int fd);
 
 extern pid_t sys_clone_unified(unsigned long flags, void *child_stack, void *parent_tid,
