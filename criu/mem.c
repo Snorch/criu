@@ -379,7 +379,7 @@ static int __parasite_dump_pages_seized(struct pstree_item *item,
 		stats_entry__free_unpacked(stats, NULL);
 
 		if (pps_buf.start_time >= dump_csec) {
-			pr_warn("Detected possible pid reuse pid=%d, " \
+			pr_err("Detected possible pid reuse pid=%d, " \
 				"start_time=%llu, parent's dump_uptime=%lu\n",
 				item->pid->real, pps_buf.start_time,
 				dump_csec);
