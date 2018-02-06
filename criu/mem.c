@@ -30,9 +30,11 @@
 #include "fault-injection.h"
 #include "prctl.h"
 #include <compel/compel.h>
+#include "proc_parse.h"
 
 #include "protobuf.h"
 #include "images/pagemap.pb-c.h"
+#include "images/stats.pb-c.h"
 
 static int task_reset_dirty_track(int pid)
 {
@@ -303,6 +305,7 @@ static int __parasite_dump_pages_seized(struct pstree_item *item,
 	int ret = -1;
 	unsigned cpp_flags = 0;
 	unsigned long pmc_size;
+	bool possible_pid_reuse = false;
 
 	if (opts.check_only)
 		return 0;
@@ -360,6 +363,31 @@ static int __parasite_dump_pages_seized(struct pstree_item *item,
 			xfer.parent = NULL + 1;
 	}
 
+	if (xfer.parent) {
+		struct proc_pid_stat pps_buf;
+		StatsEntry *stats = NULL;
+		unsigned long dump_csec;
+
+		ret = parse_pid_stat(item->pid->real, &pps_buf);
+		if (ret < 0)
+			goto out_xfer;
+
+		ret = get_parent_stats((void**)&stats);
+		if (ret < 0)
+			goto out_xfer;
+		dump_csec = stats->dump->dump_uptime/(USEC_PER_SEC / 100);
+		stats_entry__free_unpacked(stats, NULL);
+
+		if (pps_buf.start_time >= dump_csec) {
+			pr_warn("Detected possible pid reuse pid=%d, " \
+				"start_time=%llu, parent's dump_uptime=%lu\n",
+				item->pid->real, pps_buf.start_time,
+				dump_csec);
+			possible_pid_reuse = true;
+		}
+	}
+
+
 	/*
 	 * Step 1 -- generate the pagemap
 	 */
@@ -386,7 +414,7 @@ static int __parasite_dump_pages_seized(struct pstree_item *item,
 		else {
 again:
 			ret = generate_iovs(vma_area, pp, map, &off,
-				has_parent);
+				has_parent && !possible_pid_reuse);
 			if (ret == -EAGAIN) {
 				BUG_ON(!(pp->flags & PP_CHUNK_MODE));
 
