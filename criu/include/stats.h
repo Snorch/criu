@@ -23,6 +23,8 @@ extern void timing_start(int t);
 extern void timing_stop(int t);
 extern void timing_uptime(int t);
 
+extern int get_parent_stats(void **se);
+
 enum {
 	CNT_PAGES_SCANNED,
 	CNT_PAGES_SKIPPED_PARENT,
