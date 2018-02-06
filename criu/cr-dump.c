@@ -1571,6 +1571,7 @@ static int cr_pre_dump_finish(int ret)
 	 */
 	if (arch_set_thread_regs(root_item, false) < 0)
 		goto err;
+	timing_uptime(TIME_DUMP_UPTIME);
 	pstree_switch_state(root_item, TASK_ALIVE);
 
 	timing_stop(TIME_FROZEN);
@@ -1798,6 +1799,7 @@ static int cr_dump_finish(int ret)
 
 	if (arch_set_thread_regs(root_item, true) < 0)
 		return -1;
+	timing_uptime(TIME_DUMP_UPTIME);
 	pstree_switch_state(root_item,
 			    (ret || post_dump_ret) ?
 			    TASK_ALIVE : opts.final_state);
