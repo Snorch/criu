@@ -12,4 +12,10 @@ extern int ns_init(int argc, char **argv);
 extern void test_waitsig(void);
 extern void parseargs(int, char **);
 
+enum {
+	TEST_NO_SIG = 0,
+	TEST_SIG_PRE,
+	TEST_SIG_STOP,
+};
+
 #endif

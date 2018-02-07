@@ -168,9 +168,12 @@ static void ns_sig_hand(int signo)
 	char buf[128] = "";
 
 	if (signo == SIGTERM) {
-		futex_set_and_wake(&sig_received, signo);
+		futex_set_and_wake(&sig_received, TEST_SIG_STOP);
 		len = snprintf(buf, sizeof(buf), "Time to stop and check\n");
 		goto write_out;
+	} else if (signo == SIGUSR1) {
+		futex_cmpxchg_and_wake(&sig_received, TEST_NO_SIG, TEST_SIG_PRE);
+		return;
 	}
 
 	while (1) {
@@ -179,9 +182,9 @@ static void ns_sig_hand(int signo)
 			return;
 		if (pid == -1) {
 			if (errno == ECHILD) {
-				if (futex_get(&sig_received))
+				if (futex_get(&sig_received) == TEST_SIG_STOP)
 					return;
-				futex_set_and_wake(&sig_received, signo);
+				futex_set_and_wake(&sig_received, TEST_SIG_STOP);
 				len = snprintf(buf, sizeof(buf),
 						"All test processes exited\n");
 			} else {
@@ -258,6 +261,11 @@ int ns_init(int argc, char **argv)
 		exit(1);
 	}
 
+	if (sigaction(SIGUSR1, &sa, NULL)) {
+		fprintf(stderr, "Can't set SIGUSR1 handler: %m\n");
+		exit(1);
+	}
+
 	x = malloc(strlen(pidfile) + 3);
 	sprintf(x, "%sns", pidfile);
 	pidfile = x;
@@ -304,9 +312,6 @@ int ns_init(int argc, char **argv)
 	if (ret)
 		exit(ret);
 
-	/* suspend/resume */
-	test_waitsig();
-
 	fd = open(pidfile, O_RDONLY);
 	if (fd == -1) {
 		fprintf(stderr, "open(%s) failed: %m\n", pidfile);
@@ -314,12 +319,17 @@ int ns_init(int argc, char **argv)
 	}
 	ret = read(fd, buf, sizeof(buf) - 1);
 	buf[ret] = '\0';
+	close(fd);
 	if (ret == -1) {
 		fprintf(stderr, "read() failed: %m\n");
 		exit(1);
 	}
-
 	pid = atoi(buf);
+
+	while (!test_waitpre())
+		kill(pid, SIGUSR1);
+	/* after suspend/resume */
+
 	fprintf(stderr, "kill(%d, SIGTERM)\n", pid);
 	if (pid > 0)
 		kill(pid, SIGTERM);
