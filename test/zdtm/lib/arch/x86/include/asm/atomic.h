@@ -1,6 +1,8 @@
 #ifndef ATOMIC_H__
 #define ATOMIC_H__
 
+#include "asm/cmpxchg.h"
+
 #define atomic_set(mem, v)					\
 	({							\
 		asm volatile ("lock xchg %0, %1\n"		\
@@ -45,5 +47,10 @@
 		     : "+m" (*mem)				\
 		     : "ir" (i));				\
 })
+
+static inline int atomic_cmpxchg(uint32_t *v, uint32_t old, uint32_t new)
+{
+	return cmpxchg(v, old, new);
+}
 
 #endif /* ATOMIC_H__ */
