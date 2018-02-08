@@ -204,7 +204,6 @@ write_out:
 static int ns_exec(void *_arg)
 {
 	struct ns_exec_args *args = (struct ns_exec_args *) _arg;
-	char buf[4096];
 	int ret;
 
 	close(args->status_pipe[0]);
@@ -217,7 +216,6 @@ static int ns_exec(void *_arg)
 		return -1;
 	}
 	close(args->status_pipe[1]);
-	read(STATUS_FD, buf, sizeof(buf));
 	shutdown(STATUS_FD, SHUT_RD);
 
 	if (prepare_namespaces())
