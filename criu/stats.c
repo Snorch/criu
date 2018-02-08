@@ -97,12 +97,12 @@ void timing_stop(int t)
 	timeval_accumulate(&tm->start, &now, &tm->total);
 }
 
-void timing_uptime(int t)
+int timing_uptime(int t)
 {
 	struct timing *tm;
 
 	tm = get_timing(t);
-	parse_uptime(&tm->total);
+	return parse_uptime(&tm->total);
 }
 
 static void encode_time(int t, u_int32_t *to)

@@ -21,7 +21,7 @@ enum {
 
 extern void timing_start(int t);
 extern void timing_stop(int t);
-extern void timing_uptime(int t);
+extern int timing_uptime(int t);
 
 enum {
 	CNT_PAGES_SCANNED,
