@@ -367,6 +367,13 @@ static int __parasite_dump_pages_seized(struct pstree_item *item,
 		struct proc_pid_stat pps_buf;
 		StatsEntry *stats = NULL;
 		unsigned long dump_csec;
+		unsigned long clock_ticks;
+
+		clock_ticks = sysconf(_SC_CLK_TCK);
+		if (clock_ticks == -1) {
+			pr_perror("Failed to get clock ticks via sysconf");
+			goto out_xfer;
+		}
 
 		ret = parse_pid_stat(item->pid->real, &pps_buf);
 		if (ret < 0)
@@ -375,7 +382,7 @@ static int __parasite_dump_pages_seized(struct pstree_item *item,
 		ret = get_parent_stats((void**)&stats);
 		if (ret < 0)
 			goto out_xfer;
-		dump_csec = stats->dump->dump_uptime/(USEC_PER_SEC / 100);
+		dump_csec = stats->dump->dump_uptime/(USEC_PER_SEC / clock_ticks);
 		stats_entry__free_unpacked(stats, NULL);
 
 		if (pps_buf.start_time >= dump_csec) {
