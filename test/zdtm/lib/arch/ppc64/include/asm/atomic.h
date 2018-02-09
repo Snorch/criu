@@ -86,6 +86,6 @@ static __inline__ void atomic_dec(atomic_t *v)
 	: "cc", "xer");
 }
 
-#define atomic_cmpxchg(v, o, n) (cmpxchg(&((v)->counter), (o), (n)))
+#define atomic_cmpxchg(v, o, n) (cmpxchg((v), (o), (n)))
 
 #endif /* __CR_ATOMIC_H__ */
