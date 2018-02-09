@@ -1,6 +1,7 @@
 #ifndef __CR_ATOMIC_H__
 #define __CR_ATOMIC_H__
 
+#include "asm/processor.h"
 
 typedef uint32_t atomic_t;
 
