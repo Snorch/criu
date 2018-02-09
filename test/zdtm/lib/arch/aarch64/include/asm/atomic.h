@@ -84,7 +84,7 @@ static inline int atomic_cmpxchg(atomic_t *ptr, int old, int new)
 "	stxr	%w0, %w4, %2\n"
 "	cbnz	%w0, 1b\n"
 "2:"
-	: "=&r" (tmp), "=&r" (oldval), "+Q" (ptr->counter)
+	: "=&r" (tmp), "=&r" (oldval), "+Q" (ptr)
 	: "Ir" (old), "r" (new)
 	: "cc");
 
