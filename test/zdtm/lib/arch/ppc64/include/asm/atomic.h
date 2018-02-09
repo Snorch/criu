@@ -8,6 +8,8 @@
  */
 typedef uint32_t atomic_t;
 
+#include "asm/cmpxchg.h"
+
 #define PPC_ATOMIC_ENTRY_BARRIER	"lwsync \n"
 #define PPC_ATOMIC_EXIT_BARRIER		"sync  	\n"
 
@@ -83,5 +85,7 @@ static __inline__ void atomic_dec(atomic_t *v)
 	: "r" (v)
 	: "cc", "xer");
 }
+
+#define atomic_cmpxchg(v, o, n) (cmpxchg((v), (o), (n)))
 
 #endif /* __CR_ATOMIC_H__ */
