@@ -76,7 +76,7 @@ static inline int __atomic_cmpxchg(int *ptr, int old, int new)
 
 static inline int atomic_cmpxchg(atomic_t *v, int old, int new)
 {
-	return __atomic_cmpxchg(&v->counter, old, new);
+	return __atomic_cmpxchg(v, old, new);
 }
 
 #endif /* __ARCH_S390_ATOMIC__  */
