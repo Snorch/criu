@@ -65,4 +65,13 @@ static inline int atomic_inc(atomic_t *v)
 
 #define atomic_dec(_v)			atomic_sub(1, _v)
 
+static inline int atomic_cmpxchg(atomic_t *ptr, int old, int new)
+{
+	asm volatile(
+		"	cs	%[old],%[new],%[ptr]"
+		: [old] "+d" (old), [ptr] "+Q" (*ptr)
+		: [new] "d" (new) : "cc", "memory");
+	return old;
+}
+
 #endif /* __ARCH_S390_ATOMIC__  */
