@@ -30,9 +30,11 @@
 #include "fault-injection.h"
 #include "prctl.h"
 #include <compel/compel.h>
+#include "proc_parse.h"
 
 #include "protobuf.h"
 #include "images/pagemap.pb-c.h"
+#include "images/stats.pb-c.h"
 
 static int task_reset_dirty_track(int pid)
 {
@@ -294,7 +296,8 @@ static int __parasite_dump_pages_seized(struct pstree_item *item,
 		struct parasite_dump_pages_args *args,
 		struct vm_area_list *vma_area_list,
 		struct mem_dump_ctl *mdc,
-		struct parasite_ctl *ctl)
+		struct parasite_ctl *ctl,
+		struct proc_pid_stat *stat)
 {
 	pmc_t pmc = PMC_INIT;
 	struct page_pipe *pp;
@@ -303,6 +306,7 @@ static int __parasite_dump_pages_seized(struct pstree_item *item,
 	int ret = -1;
 	unsigned cpp_flags = 0;
 	unsigned long pmc_size;
+	bool possible_pid_reuse = false;
 
 	if (opts.check_only)
 		return 0;
@@ -360,6 +364,49 @@ static int __parasite_dump_pages_seized(struct pstree_item *item,
 			xfer.parent = NULL + 1;
 	}
 
+	if (xfer.parent) {
+		struct proc_pid_stat pps_buf;
+		static StatsEntry *stats;
+		unsigned long dump_ticks;
+		unsigned long clock_ticks;
+
+		clock_ticks = sysconf(_SC_CLK_TCK);
+		if (clock_ticks == -1) {
+			pr_perror("Failed to get clock ticks via sysconf");
+			goto out_xfer;
+		}
+
+		if (stat) {
+			pps_buf = *stat;
+		} else {
+			ret = parse_pid_stat(item->pid->real, &pps_buf);
+			if (ret < 0)
+				goto out_xfer;
+		}
+
+		if (!stats) {
+			stats = get_parent_stats();
+			if (!stats)
+				goto out_xfer;
+		}
+
+		if (stats->dump->has_dump_uptime) {
+			dump_ticks = stats->dump->dump_uptime/(USEC_PER_SEC / clock_ticks);
+
+			if (pps_buf.start_time >= dump_ticks) {
+				/* Print warning when we are not sure */
+				if (pps_buf.start_time == dump_ticks)
+					pr_warn("Will do full redump for pid=%d due " \
+						"to possible pid reuse\n",
+						item->pid->real);
+				possible_pid_reuse = true;
+			}
+		} else
+			pr_warn_once("Parent image has no dump timestamp, " \
+				     "pid reuse detection OFF!\n");
+	}
+
+
 	/*
 	 * Step 1 -- generate the pagemap
 	 */
@@ -386,7 +433,7 @@ static int __parasite_dump_pages_seized(struct pstree_item *item,
 		else {
 again:
 			ret = generate_iovs(vma_area, pp, map, &off,
-				has_parent);
+				has_parent && !possible_pid_reuse);
 			if (ret == -EAGAIN) {
 				BUG_ON(!(pp->flags & PP_CHUNK_MODE));
 
@@ -436,7 +483,8 @@ out:
 int parasite_dump_pages_seized(struct pstree_item *item,
 		struct vm_area_list *vma_area_list,
 		struct mem_dump_ctl *mdc,
-		struct parasite_ctl *ctl)
+		struct parasite_ctl *ctl,
+		struct proc_pid_stat* stat)
 {
 	int ret;
 	struct parasite_dump_pages_args *pargs;
@@ -463,7 +511,7 @@ int parasite_dump_pages_seized(struct pstree_item *item,
 		return -1;
 	}
 
-	ret = __parasite_dump_pages_seized(item, pargs, vma_area_list, mdc, ctl);
+	ret = __parasite_dump_pages_seized(item, pargs, vma_area_list, mdc, ctl, stat);
 	if (ret) {
 		pr_err("Can't dump page with parasite\n");
 		/* Parasite will unprotect VMAs after fail in fini() */

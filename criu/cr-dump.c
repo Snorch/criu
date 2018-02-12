@@ -1290,7 +1290,7 @@ static int pre_dump_one_task(struct pstree_item *item)
 	mdc.pre_dump = true;
 	mdc.lazy = false;
 
-	ret = parasite_dump_pages_seized(item, &vmas, &mdc, parasite_ctl);
+	ret = parasite_dump_pages_seized(item, &vmas, &mdc, parasite_ctl, NULL);
 	if (ret)
 		goto err_cure;
 
@@ -1449,7 +1449,7 @@ static int dump_one_task(struct pstree_item *item)
 	mdc.pre_dump = false;
 	mdc.lazy = opts.lazy_pages;
 
-	ret = parasite_dump_pages_seized(item, &vmas, &mdc, parasite_ctl);
+	ret = parasite_dump_pages_seized(item, &vmas, &mdc, parasite_ctl, &pps_buf);
 	if (ret)
 		goto err_cure;
 

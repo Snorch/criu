@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include "int.h"
 #include "vma.pb-c.h"
+#include "pid.h"
+#include "proc_parse.h"
 
 struct parasite_ctl;
 struct vm_area_list;
@@ -26,7 +28,8 @@ extern unsigned long dump_pages_args_size(struct vm_area_list *vmas);
 extern int parasite_dump_pages_seized(struct pstree_item *item,
 				      struct vm_area_list *vma_area_list,
 				      struct mem_dump_ctl *mdc,
-				      struct parasite_ctl *ctl);
+				      struct parasite_ctl *ctl,
+				      struct proc_pid_stat* stat);
 
 #define PME_PRESENT		(1ULL << 63)
 #define PME_SWAP		(1ULL << 62)
