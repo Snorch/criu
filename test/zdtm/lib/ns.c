@@ -168,9 +168,12 @@ static void ns_sig_hand(int signo)
 	char buf[128] = "";
 
 	if (signo == SIGTERM) {
-		futex_set_and_wake(&sig_received, signo);
+		futex_set_and_wake(&sig_received, TEST_SIG_STOP);
 		len = snprintf(buf, sizeof(buf), "Time to stop and check\n");
 		goto write_out;
+	} else if (signo == SIGUSR1) {
+		futex_cmpxchg_and_wake(&sig_received, TEST_NO_SIG, TEST_SIG_PRE);
+		return;
 	}
 
 	while (1) {
@@ -179,9 +182,9 @@ static void ns_sig_hand(int signo)
 			return;
 		if (pid == -1) {
 			if (errno == ECHILD) {
-				if (futex_get(&sig_received))
+				if (futex_get(&sig_received) == TEST_SIG_STOP)
 					return;
-				futex_set_and_wake(&sig_received, signo);
+				futex_set_and_wake(&sig_received, TEST_SIG_STOP);
 				len = snprintf(buf, sizeof(buf),
 						"All test processes exited\n");
 			} else {
@@ -235,7 +238,7 @@ int ns_init(int argc, char **argv)
 		.sa_handler	= ns_sig_hand,
 		.sa_flags	= SA_RESTART,
 	};
-	int ret, fd, status_pipe = STATUS_FD;
+	int ret, test_ret, fd, status_pipe = STATUS_FD;
 	char buf[128], *x;
 	pid_t pid;
 	bool reap;
@@ -258,6 +261,11 @@ int ns_init(int argc, char **argv)
 		exit(1);
 	}
 
+	if (sigaction(SIGUSR1, &sa, NULL)) {
+		fprintf(stderr, "Can't set SIGUSR1 handler: %m\n");
+		exit(1);
+	}
+
 	x = malloc(strlen(pidfile) + 3);
 	sprintf(x, "%sns", pidfile);
 	pidfile = x;
@@ -273,11 +281,11 @@ int ns_init(int argc, char **argv)
 		return 0; /* Continue normal test startup */
 	}
 
-	ret = -1;
-	if (waitpid(pid, &ret, 0) < 0)
+	test_ret = -1;
+	if (waitpid(pid, &test_ret, 0) < 0)
 		fprintf(stderr, "waitpid() failed: %m\n");
-	else if (ret)
-		fprintf(stderr, "The test returned non-zero code %d\n", ret);
+	else if (test_ret)
+		fprintf(stderr, "The test returned non-zero code %d\n", test_ret);
 
 	if (reap && sigaction(SIGCHLD, &sa, NULL)) {
 		fprintf(stderr, "Can't set SIGCHLD handler: %m\n");
@@ -298,15 +306,6 @@ int ns_init(int argc, char **argv)
 			fprintf(stderr, "%d return %d\n", pid, status);
 	}
 
-	/* Daemonize */
-	write(status_pipe, &ret, sizeof(ret));
-	close(status_pipe);
-	if (ret)
-		exit(ret);
-
-	/* suspend/resume */
-	test_waitsig();
-
 	fd = open(pidfile, O_RDONLY);
 	if (fd == -1) {
 		fprintf(stderr, "open(%s) failed: %m\n", pidfile);
@@ -314,12 +313,23 @@ int ns_init(int argc, char **argv)
 	}
 	ret = read(fd, buf, sizeof(buf) - 1);
 	buf[ret] = '\0';
+	close(fd);
 	if (ret == -1) {
 		fprintf(stderr, "read() failed: %m\n");
 		exit(1);
 	}
-
 	pid = atoi(buf);
+
+	/* Daemonize */
+	write(status_pipe, &test_ret, sizeof(test_ret));
+	close(status_pipe);
+	if (test_ret)
+		exit(test_ret);
+
+	while (!test_waitpre())
+		kill(pid, SIGUSR1);
+	/* after suspend/resume */
+
 	fprintf(stderr, "kill(%d, SIGTERM)\n", pid);
 	if (pid > 0)
 		kill(pid, SIGTERM);
