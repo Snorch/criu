@@ -1,6 +1,7 @@
 #ifndef __CR_ATOMIC_H__
 #define __CR_ATOMIC_H__
 
+#include "asm/processor.h"
 
 typedef uint32_t atomic_t;
 
@@ -8,6 +9,31 @@ typedef uint32_t atomic_t;
 /* Copied from the Linux kernel header arch/arm/include/asm/atomic.h */
 
 #define smp_mb() __asm__ __volatile__ ("dmb" : : : "memory")
+
+static inline int atomic_cmpxchg(atomic_t *ptr, int old, int new)
+{
+	int oldval;
+	unsigned long res;
+
+	smp_mb();
+	prefetchw(ptr);
+
+	do {
+		__asm__ __volatile__("@ atomic_cmpxchg\n"
+		"ldrex	%1, [%3]\n"
+		"mov	%0, #0\n"
+		"teq	%1, %4\n"
+		"it	eq\n"
+		"strexeq %0, %5, [%3]\n"
+		    : "=&r" (res), "=&r" (oldval), "+Qo" (ptr)
+		    : "r" (ptr), "Ir" (old), "r" (new)
+		    : "cc");
+	} while (res);
+
+	smp_mb();
+
+	return oldval;
+}
 
 #define atomic_set(mem,v) (*(mem) = (v))
 #define atomic_get(v) (*(volatile uint32_t *)v)
