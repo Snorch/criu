@@ -41,6 +41,11 @@ static inline void futex_set(futex_t *f, uint32_t v)
 	atomic_set(&f->raw, v);
 }
 
+static inline int futex_cmpxchg(futex_t *f, uint32_t old, uint32_t new)
+{
+	return atomic_cmpxchg(&f->raw, old, new);
+}
+
 /* Set futex @f to @v and wake up all waiters */
 static inline void futex_add_and_wake(futex_t *f, uint32_t v)
 {
@@ -75,6 +80,16 @@ static inline void futex_set_and_wake(futex_t *f, uint32_t v)
 {
 	atomic_set(&f->raw, v);
 	BUG_ON(sys_futex(&f->raw, FUTEX_WAKE, INT_MAX, NULL, NULL, 0) < 0);
+}
+
+static inline int futex_cmpxchg_and_wake(futex_t *f, uint32_t old, uint32_t new)
+{
+	uint32_t ret;
+
+	ret = atomic_cmpxchg(&f->raw, old, new);
+	if (ret == old)
+		BUG_ON(sys_futex(&f->raw, FUTEX_WAKE, INT_MAX, NULL, NULL, 0) < 0);
+	return ret;
 }
 
 /* Mark futex @f as wait abort needed and wake up all waiters */
