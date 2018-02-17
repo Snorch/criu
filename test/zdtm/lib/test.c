@@ -35,9 +35,13 @@ static int parent;
 
 static void sig_hand(int signo)
 {
-	if (parent)
-		futex_set_and_wake(&test_shared_state->stage, TEST_FAIL_STAGE);
-	futex_set_and_wake(&sig_received, signo);
+	if (signo == SIGUSR1) {
+		futex_cmpxchg_and_wake(&sig_received, TEST_NO_SIG, TEST_SIG_PRE);
+	} else {
+		if (parent)
+			futex_set_and_wake(&test_shared_state->stage, TEST_FAIL_STAGE);
+		futex_set_and_wake(&sig_received, TEST_SIG_STOP);
+	}
 }
 
 static char *outfile;
@@ -219,6 +223,11 @@ void test_init(int argc, char **argv)
 		exit(1);
 	}
 
+	if (sigaction(SIGUSR1, &sa, NULL)) {
+		fprintf(stderr, "Can't set SIGUSR1 handler: %m\n");
+		exit(1);
+	}
+
 	setup_outfile();
 	redir_stdfds();
 
@@ -289,12 +298,23 @@ void test_daemon()
 
 int test_go(void)
 {
-	return !futex_get(&sig_received);
+	return futex_get(&sig_received) != TEST_SIG_STOP;
 }
 
 void test_waitsig(void)
 {
-	futex_wait_while(&sig_received, 0);
+	futex_wait_until(&sig_received, TEST_SIG_STOP);
+}
+
+int test_waitpre(void)
+{
+	int ret;
+
+	futex_wait_while(&sig_received, TEST_NO_SIG);
+	ret = futex_cmpxchg_and_wake(&sig_received, TEST_SIG_PRE, TEST_NO_SIG);
+	if (ret == TEST_SIG_PRE)
+		return 0;
+	return 1;
 }
 
 pid_t sys_clone_unified(unsigned long flags, void *child_stack, void *parent_tid,
