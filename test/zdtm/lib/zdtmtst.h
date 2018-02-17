@@ -41,6 +41,7 @@ extern void test_msg(const char *format, ...)
 extern int test_go(void);
 /* sleep until SIGTERM is delivered */
 extern void test_waitsig(void);
+extern int test_waitpre(void);
 
 #include <stdint.h>
 

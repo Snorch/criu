@@ -459,6 +459,13 @@ class zdtm_test:
 
 		self.__flavor.fini()
 
+	def signal_pre_dump(self):
+		if self.__pid == 0:
+			self.getpid()
+		sig = signal.SIGUSR1
+		print "Send the %d signal to  %s" % (sig, self.__pid)
+		os.kill(int(self.__pid), sig)
+
 	def stop(self):
 		self.__freezer.thaw()
 		self.getpid()  # Read the pid from pidfile back
@@ -1208,6 +1215,7 @@ def cr(cr_api, test, opts):
 			else:
 				cr_api.dump("pre-dump")
 				try_run_hook(test, ["--post-pre-dump"])
+				test.signal_pre_dump()
 			time.sleep(pres[1])
 
 		sbs('pre-dump')
