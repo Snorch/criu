@@ -221,19 +221,19 @@ StatsEntry *get_parent_stats(void)
 
 	dir = openat(get_service_fd(IMG_FD_OFF), CR_PARENT_LINK, O_RDONLY);
 	if (dir == -1) {
-		pr_perror("Failed to open parent directory");
+		pr_warn("Failed to open parent directory");
 		return NULL;
 	}
 
 	img = open_image_at(dir, CR_FD_STATS, O_RSTR, "dump");
 	if (!img) {
-		pr_perror("Failed to open parent dump stats");
+		pr_warn("Failed to open parent dump stats");
 		close(dir);
 		return NULL;
 	}
 
 	if (pb_read_one(img, &se, PB_STATS) < 0) {
-		pr_perror("Failed to read parent dump stats");
+		pr_warn("Failed to read parent dump stats");
 		close_image(img);
 		close(dir);
 		return NULL;
