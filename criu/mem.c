@@ -314,7 +314,8 @@ static int detect_pid_reuse(struct pstree_item *item,
 	}
 
 	if (!parent_se) {
-		pr_perror("No parent stats, see errors in get_parent_stats");
+		pr_perror("No parent stats, for real error, please, " \
+			  "check warnings in get_parent_stats");
 		return -1;
 	}
 
