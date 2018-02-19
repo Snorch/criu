@@ -2244,8 +2244,10 @@ static int restore_root_task(struct pstree_item *init)
 	if (prepare_userns_hook())
 		return -1;
 
-	if (prepare_namespace_before_tasks())
+	if (prepare_namespace_before_tasks()) {
+		pr_err("DEBUG Failed to prepare namespace before tasks\n");
 		return -1;
+	}
 
 	__restore_switch_stage_nw(CR_STATE_ROOT_TASK);
 
@@ -2377,8 +2379,10 @@ skip_ns_bouncing:
 	 * There is no need to call try_clean_remaps() after this point,
 	 * as restore went OK and all ghosts were removed by the openers.
 	 */
-	if (depopulate_roots_yard(mnt_ns_fd, false))
+	if (depopulate_roots_yard(mnt_ns_fd, false)) {
+		pr_err("DEBUG Failed to depopulate roots yard\n");
 		goto out_kill;
+	}
 
 	close_safe(&mnt_ns_fd);
 
