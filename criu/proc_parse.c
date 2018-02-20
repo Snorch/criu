@@ -2724,7 +2724,7 @@ int parse_uptime(struct timeval *_tv)
 		return -1;
 	}
 
-	if (fscanf(f, "%lu.%lu", &sec, &csec) != 2) {
+	if (fscanf(f, "%lu.%2lu", &sec, &csec) != 2) {
 		pr_perror("Failed to parse /proc/uptime");
 		fclose(f);
 		return -1;
