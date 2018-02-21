@@ -1555,6 +1555,7 @@ static inline void unsc_msg_init(struct unsc_msg *m, uns_call_t *c,
 		ch->cmsg_level = SOL_SOCKET;
 		ch->cmsg_type = SCM_RIGHTS;
 		*((int *)CMSG_DATA(ch)) = fd;
+		pr_err("DEBUG5 fd=%d\n", fd);
 	}
 }
 
@@ -1580,8 +1581,10 @@ static void unsc_msg_pid_fd(struct unsc_msg *um, pid_t *pid, int *fd)
 		BUG_ON(ch->cmsg_level != SOL_SOCKET);
 		BUG_ON(ch->cmsg_type != SCM_RIGHTS);
 		*fd = *((int *)CMSG_DATA(ch));
+		pr_err("DEBUG3 fd=%d\n", *fd);
 	} else {
 		*fd = -1;
+		pr_err("DEBUG4 fd=%d\n", *fd);
 	}
 }
 
@@ -1699,6 +1702,7 @@ static int usernsd(int sk)
 		else
 			fd = -1;
 
+		pr_err("DEBUG6 ret = %d\n", ret);
 		unsc_msg_init(&um, &call, &ret, NULL, 0, fd);
 		if (sendmsg(sk, &um.h, 0) <= 0) {
 			pr_perror("uns: send resp error");
@@ -1772,10 +1776,13 @@ int __userns_call(const char *func_name, uns_call_t call, int flags,
 
 	/* Decode the result and return */
 
-	if (flags & UNS_FDOUT)
+	if (flags & UNS_FDOUT) {
 		unsc_msg_pid_fd(&um, NULL, &ret);
-	else
+		pr_warn("DEBUG1");
+	} else {
 		ret = res;
+		pr_err("DEBUG2 res=%d\n", res);
+	}
 out:
 	if (!async)
 		mutex_unlock(&task_entries->userns_sync_lock);
