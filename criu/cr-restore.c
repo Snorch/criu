@@ -1842,12 +1842,16 @@ static int restore_task_with_children(void *_arg)
 		}
 
 		/* Wait prepare_userns */
-		if (restore_finish_ns_stage(CR_STATE_ROOT_TASK, CR_STATE_PREPARE_NAMESPACES) < 0)
+		if (restore_finish_ns_stage(CR_STATE_ROOT_TASK, CR_STATE_PREPARE_NAMESPACES) < 0) {
+			pr_err("Failed to finish ns stage CR_STATE_ROOT_TASK\n");
 			goto err;
+		}
 	}
 
-	if (needs_prep_creds(current) && (prepare_userns_creds()))
+	if (needs_prep_creds(current) && (prepare_userns_creds())) {
+		pr_err("Failed to prepare userns creds\n");
 		goto err;
+	}
 
 	/*
 	 * Call this _before_ forking to optimize cgroups
@@ -1855,13 +1859,17 @@ static int restore_task_with_children(void *_arg)
 	 * we will only move the root one there, others will
 	 * just have it inherited.
 	 */
-	if (prepare_task_cgroup(current) < 0)
+	if (prepare_task_cgroup(current) < 0) {
+		pr_err("Failed to prepare task cgroup\n");
 		goto err;
+	}
 
 	/* Restore root task */
 	if (current->parent == NULL) {
-		if (prep_usernsd_transport())
+		if (prep_usernsd_transport()) {
+			pr_err("Failed to prepare usernsd transport\n");
 			goto err;
+		}
 
 		if (join_namespaces()) {
 			pr_perror("Join namespaces failed");
@@ -1876,19 +1884,29 @@ static int restore_task_with_children(void *_arg)
 		 * namespaces and do not care for the rest of the cases.
 		 * Thus -- mount proc at custom location for any new namespace
 		 */
-		if (mount_proc())
+		if (mount_proc()) {
+			pr_err("Failed to mount proc\n");
 			goto err;
+		}
 
-		if (!files_collected() && collect_image(&tty_cinfo))
+		if (!files_collected() && collect_image(&tty_cinfo)) {
+			pr_err("Failed to collect image\n");
 			goto err;
-		if (collect_images(before_ns_cinfos, ARRAY_SIZE(before_ns_cinfos)))
+		}
+		if (collect_images(before_ns_cinfos, ARRAY_SIZE(before_ns_cinfos))) {
+			pr_err("Failed to collect images\n");
 			goto err;
+		}
 
-		if (prepare_namespace(current, ca->clone_flags))
+		if (prepare_namespace(current, ca->clone_flags)) {
+			pr_err("Failed to prepare namespace\n");
 			goto err;
+		}
 
-		if (restore_finish_ns_stage(CR_STATE_PREPARE_NAMESPACES, CR_STATE_FORKING) < 0)
+		if (restore_finish_ns_stage(CR_STATE_PREPARE_NAMESPACES, CR_STATE_FORKING) < 0) {
+			pr_err("Failed to finish ns stage\n");
 			goto err;
+		}
 
 		if (root_prepare_shared())
 			goto err;
