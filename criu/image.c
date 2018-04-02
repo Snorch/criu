@@ -149,7 +149,7 @@ InventoryEntry *get_parent_inventory(void)
 		return NULL;
 	}
 
-	if (!ie->>has_dump_uptime) {
+	if (!ie->has_dump_uptime) {
 		pr_warn("Parent pre-dump inventory has no uptime");
 		ie = NULL;
 	}
