@@ -103,3 +103,63 @@ char *mnt_get_sibling_path(struct mount_info *m,
 
 	return buf;
 }
+
+static int root_path_from_parent(struct mount_info *m, char *buf, int size)
+{
+	int len;
+
+	if (!m->parent)
+		return -1;
+
+	len = snprintf(buf, size, "%s", m->parent->root);
+	if (len >= size)
+		return -1;
+	BUG_ON(len <= 0);
+	if (buf[len-1] == '/')
+		len--;
+	size -= len;
+	buf += len;
+
+	len = strlen(m->mountpoint) - strlen(m->parent->mountpoint);
+	BUG_ON(len < 0);
+	if (len) {
+		len = snprintf(buf, size, "%s", m->mountpoint + strlen(m->parent->mountpoint));
+		if (len >= size)
+			return -1;
+	}
+
+	return 0;
+}
+
+int same_propagation_group(struct mount_info *a, struct mount_info *b) {
+	char root_path_a[PATH_MAX], root_path_b[PATH_MAX];
+
+	/*
+	 * If mounts are in same propagation group:
+	 * 1) They should be together in one shared group.
+	 * 2) Their parents should be different.
+	 * 3) Their parents should be together in (may be another) shared group.
+	 */
+	if (a->shared_id != b->shared_id ||
+	    !a->parent || !b->parent || a->parent == b->parent ||
+	    a->parent->shared_id != b->parent->shared_id)
+		return 0;
+
+	if (root_path_from_parent(a, root_path_a, PATH_MAX)) {
+		pr_err("Failed to get root path for mount %d\n", a->mnt_id);
+		return -1;
+	}
+
+	if (root_path_from_parent(b, root_path_b, PATH_MAX)) {
+		pr_err("Failed to get root path for mount %d\n", b->mnt_id);
+		return -1;
+	}
+
+	/*
+	 * 4) Their mountpoints relative to the root of the superblock of their
+	 * parent's share should be equal.
+	 */
+	if (!strcmp(root_path_a, root_path_b))
+		return 1;
+	return 0;
+}
