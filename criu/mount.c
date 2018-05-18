@@ -2363,24 +2363,6 @@ static bool can_mount_now(struct mount_info *mi)
 	if (mi->external)
 		goto shared;
 
-	/*
-	 * We're the slave peer:
-	 *   - Make sure the master peer is already mounted
-	 *   - Make sure all children are mounted as well to
-	 *     eliminate mounts duplications
-	 */
-	if (mi->master_id > 0) {
-		struct mount_info *c;
-
-		if (mi->bind == NULL)
-			return false;
-
-		list_for_each_entry(c, &mi->bind->children, siblings) {
-			if (!c->mounted)
-				return false;
-		}
-	}
-
 	if (!fsroot_mounted(mi) && (mi->bind == NULL && !mi->need_plugin))
 		return false;
 
