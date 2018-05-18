@@ -655,6 +655,20 @@ static bool mnt_needs_remap(struct mount_info *m)
 	return false;
 }
 
+static bool mnt_can_remap(struct mount_info *m) {
+	struct mount_info *c;
+
+	/* Child of shared mount can't be remapped */
+	if (m->parent && m->parent->shared_id)
+		return false;
+
+	/* Check there is no children-overmount which can't be remapped */
+	list_for_each_entry(c, &m->children, siblings)
+		if (!strcmp(c->mountpoint, m->mountpoint))
+			return mnt_can_remap(c);
+	return true;
+}
+
 /*
  * Say mount is external if it was explicitly specified as an
  * external or it will be bind from such an explicit external
@@ -2520,7 +2534,7 @@ static int try_remap_mount(struct mount_info *m)
 {
 	struct mnt_remap_entry *r;
 
-	if (!mnt_needs_remap(m))
+	if (!mnt_needs_remap(m) || !mnt_can_remap(m))
 		return 0;
 
 	BUG_ON(!m->parent);
