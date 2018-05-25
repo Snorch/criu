@@ -1020,27 +1020,30 @@ static int resolve_shared_mounts(struct mount_info *info, int root_master_id)
 
 	/* Search propagation groups */
 	for (m = info; m; m = m->next) {
-		struct mount_info *shared;
+		struct mount_info *sparent;
 
 		if (!list_empty(&m->mnt_propagate))
 			continue;
 
-		if (!m->parent)
+		if (!m->parent || !m->parent->shared_id)
 			continue;
 
-		list_for_each_entry(shared, &m->mnt_share, mnt_share) {
-			int ret;
+		list_for_each_entry(sparent, &m->parent->mnt_share, mnt_share) {
+			bool found = false;
 
-			if (!shared->parent)
-				continue;
+			list_for_each_entry(schild, &sparent->children, siblings) {
+				int ret;
 
-			ret = same_propagation_group(m, shared);
-			if (ret < 0)
-				return -1;
-			else if (ret) {
-				pr_debug("\tMount %3d is in same propagation group with %3d (@%s ~ @%s)\n",
-					 m->mnt_id, shared->mnt_id, m->mountpoint, shared->mountpoint);
-				list_add(&shared->mnt_propagate, &m->mnt_propagate);
+				ret = same_propagation_group(m, schild);
+				if (ret < 0)
+					return -1;
+				else if (ret) {
+					BUG_ON(!mounts_equal(m, schild));
+					pr_debug("\tMount %3d is in same propagation group with %3d (@%s ~ @%s)\n",
+						 m->mnt_id, shared->mnt_id, m->mountpoint, shared->mountpoint);
+					list_add(&shared->mnt_propagate, &m->mnt_propagate);
+					found = true;
+				}
 			}
 		}
 	}
@@ -2398,8 +2401,14 @@ static bool rst_mnt_is_root(struct mount_info *m)
 
 static bool can_mount_now(struct mount_info *mi)
 {
+	struct mount_info *p;
+
 	if (rst_mnt_is_root(mi))
 		return true;
+
+	/* Mount only after parent */
+	if (mi->parent && !mi->parent->mounted)
+		return false;
 
 	if (mi->external)
 		goto shared;
@@ -2408,28 +2417,23 @@ static bool can_mount_now(struct mount_info *mi)
 		return false;
 
 shared:
-	if (mi->parent->shared_id) {
-		struct mount_info *n;
+	/* Mount only after all parents of our propagation group mounted */
+	list_for_each_entry(p, &mi->mnt_propagate, mnt_propagate) {
+		BUG_ON(!p->parent);
+		if (!p->parent->mounted)
+			return false;
+	}
 
-		list_for_each_entry(n, &mi->parent->mnt_share, mnt_share)
-			/*
-			 * All mounts from mi's parent shared group which
-			 * have mi's 'sibling' should receive it through
-			 * mount propagation, so all such mounts in parent
-			 * shared group should be mounted beforehand.
-			 */
-			if (!n->mounted) {
-				char path[PATH_MAX], *mp;
-				struct mount_info *c;
+	/* Mount not-remaped overmounts only after mounts under them */
+	if (mi->parent) {
+		struct mount_info *s;
 
-				mp = mnt_get_sibling_path(mi, n, path, sizeof(path));
-				if (mp == NULL)
-					continue;
-
-				list_for_each_entry(c, &n->children, siblings)
-					if (mounts_equal(mi, c) && !strcmp(mp, c->mountpoint))
-						return false;
-			}
+		list_for_each_entry(s, &mi->parent->children, siblings) {
+			if (mi == s || s->mounted)
+				continue;
+			if (issubpath(s->mountpoint, mi->mountpoint))
+				return false;
+		}
 	}
 
 	return true;

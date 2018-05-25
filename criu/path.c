@@ -136,12 +136,10 @@ int same_propagation_group(struct mount_info *a, struct mount_info *b) {
 
 	/*
 	 * If mounts are in same propagation group:
-	 * 1) They should be together in one shared group.
-	 * 2) Their parents should be different.
-	 * 3) Their parents should be together in (may be another) shared group.
+	 * 1) Their parents should be different.
+	 * 2) Their parents should be together in (may be another) shared group.
 	 */
-	if (a->shared_id != b->shared_id ||
-	    !a->parent || !b->parent || a->parent == b->parent ||
+	if (!a->parent || !b->parent || a->parent == b->parent ||
 	    a->parent->shared_id != b->parent->shared_id)
 		return 0;
 
@@ -156,7 +154,7 @@ int same_propagation_group(struct mount_info *a, struct mount_info *b) {
 	}
 
 	/*
-	 * 4) Their mountpoints relative to the root of the superblock of their
+	 * 3) Their mountpoints relative to the root of the superblock of their
 	 * parent's share should be equal.
 	 */
 	if (!strcmp(root_path_a, root_path_b))
