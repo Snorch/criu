@@ -1020,27 +1020,29 @@ static int resolve_shared_mounts(struct mount_info *info, int root_master_id)
 
 	/* Search propagation groups */
 	for (m = info; m; m = m->next) {
-		struct mount_info *shared;
+		struct mount_info *sparent;
 
 		if (!list_empty(&m->mnt_propagate))
 			continue;
 
-		if (!m->parent)
+		if (!m->parent || !m->parent->shared_id)
 			continue;
 
-		list_for_each_entry(shared, &m->mnt_share, mnt_share) {
-			int ret;
+		list_for_each_entry(sparent, &m->parent->mnt_share, mnt_share) {
+			struct mount_info *schild;
 
-			if (!shared->parent)
-				continue;
+			list_for_each_entry(schild, &sparent->children, siblings) {
+				int ret;
 
-			ret = same_propagation_group(m, shared);
-			if (ret < 0)
-				return -1;
-			else if (ret) {
-				pr_debug("\tMount %3d is in same propagation group with %3d (@%s ~ @%s)\n",
-					 m->mnt_id, shared->mnt_id, m->mountpoint, shared->mountpoint);
-				list_add(&shared->mnt_propagate, &m->mnt_propagate);
+				ret = same_propagation_group(m, schild);
+				if (ret < 0)
+					return -1;
+				else if (ret) {
+					BUG_ON(!mounts_equal(m, schild));
+					pr_debug("\tMount %3d is in same propagation group with %3d (@%s ~ @%s)\n",
+						 m->mnt_id, schild->mnt_id, m->mountpoint, schild->mountpoint);
+					list_add(&schild->mnt_propagate, &m->mnt_propagate);
+				}
 			}
 		}
 	}
