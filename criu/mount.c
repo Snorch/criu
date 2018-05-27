@@ -2403,6 +2403,10 @@ static bool can_mount_now(struct mount_info *mi)
 	if (rst_mnt_is_root(mi))
 		return true;
 
+	/* Mount only after parent */
+	if (mi->parent && !mi->parent->mounted)
+		return false;
+
 	if (mi->external)
 		goto shared;
 
@@ -2432,28 +2436,63 @@ static bool can_mount_now(struct mount_info *mi)
 		return false;
 
 shared:
-	if (mi->parent->shared_id) {
-		struct mount_info *n;
+	/* Mount only after all parents of our propagation group mounted */
+	if (!list_empty(&mi->mnt_propagate)) {
+		struct mount_info *p;
 
-		list_for_each_entry(n, &mi->parent->mnt_share, mnt_share)
-			/*
-			 * All mounts from mi's parent shared group which
-			 * have mi's 'sibling' should receive it through
-			 * mount propagation, so all such mounts in parent
-			 * shared group should be mounted beforehand.
-			 */
-			if (!n->mounted) {
-				char path[PATH_MAX], *mp;
-				struct mount_info *c;
+		list_for_each_entry(p, &mi->mnt_propagate, mnt_propagate) {
+			BUG_ON(!p->parent);
+			if (!p->parent->mounted)
+				return false;
+		}
+	}
 
-				mp = mnt_get_sibling_path(mi, n, path, sizeof(path));
-				if (mp == NULL)
-					continue;
+	/* Mount not-remaped overmounts only after mounts under them */
+	if (mi->parent) {
+		struct mount_info *s;
 
-				list_for_each_entry(c, &n->children, siblings)
-					if (mounts_equal(mi, c) && !strcmp(mp, c->mountpoint))
-						return false;
+		list_for_each_entry(s, &mi->parent->children, siblings) {
+			if (mi == s || s->mounted)
+				continue;
+			if (issubpath(s->mountpoint, mi->mountpoint))
+				return false;
+		}
+	}
+
+	/* Monut only after all children of share which don't propagate to us mounted */
+	if (mi->shared_id) {
+		struct mount_info *s, *c, *p, *t;
+		LIST_HEAD(mi_notprop);
+		bool can = true;
+
+		/* Add all children of the shared group */
+		list_for_each_entry(s, &mi->mnt_share, mnt_share) {
+			list_for_each_entry(c, &s->children, siblings) {
+				list_add(&c->mnt_notprop, &mi_notprop);
 			}
+		}
+
+		/* Delete all members of our children's propagation groups */
+		list_for_each_entry(c, &mi->children, siblings) {
+			list_for_each_entry(p, &c->mnt_propagate, mnt_propagate) {
+				list_del_init(&p->mnt_notprop);
+			}
+		}
+
+		/* Delete all members of our propagation group */
+		list_for_each_entry(p, &mi->mnt_propagate, mnt_propagate) {
+			list_del_init(&p->mnt_notprop);
+		}
+
+		/* Check not propagated mounts mounted and cleanup list */
+		list_for_each_entry_safe(p, t, &mi_notprop, mnt_notprop) {
+			if (!p->mounted)
+				can = false;
+			list_del_init(&p->mnt_notprop);
+		}
+
+		if (!can)
+			return false;
 	}
 
 	return true;
@@ -2745,6 +2784,7 @@ struct mount_info *mnt_entry_alloc()
 		INIT_LIST_HEAD(&new->mnt_share);
 		INIT_LIST_HEAD(&new->mnt_bind);
 		INIT_LIST_HEAD(&new->mnt_propagate);
+		INIT_LIST_HEAD(&new->mnt_notprop);
 		INIT_LIST_HEAD(&new->postpone);
 	}
 	return new;
