@@ -104,7 +104,7 @@ char *mnt_get_sibling_path(struct mount_info *m,
 	return buf;
 }
 
-static int root_path_from_parent(struct mount_info *m, char *buf, int size)
+int root_path_from_parent(struct mount_info *m, char *buf, int size)
 {
 	int len;
 

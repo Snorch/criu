@@ -39,5 +39,6 @@ char *mnt_get_sibling_path(struct mount_info *m,
 			   struct mount_info *p, char *buf, int len);
 
 int same_propagation_group(struct mount_info *a, struct mount_info *b);
+int root_path_from_parent(struct mount_info *m, char *buf, int size);
 
 #endif

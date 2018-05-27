@@ -2459,7 +2459,10 @@ shared:
 		}
 	}
 
-	/* Monut only after all children of share which don't propagate to us mounted */
+	/*
+	 * Monut only after all children of share which should not't propagate
+	 * to us (but can) are mounted
+	 */
 	if (mi->shared_id) {
 		struct mount_info *s, *c, *p, *t;
 		LIST_HEAD(mi_notprop);
@@ -2468,6 +2471,16 @@ shared:
 		/* Add all children of the shared group */
 		list_for_each_entry(s, &mi->mnt_share, mnt_share) {
 			list_for_each_entry(c, &s->children, siblings) {
+				char root_path[PATH_MAX];
+				int ret;
+
+				ret = root_path_from_parent(c, root_path, PATH_MAX);
+				BUG_ON(ret);
+
+				/* Mount is out of our root */
+				if (!issubpath(root_path, mi->root))
+					continue;
+
 				list_add(&c->mnt_notprop, &mi_notprop);
 			}
 		}
@@ -2483,6 +2496,9 @@ shared:
 		list_for_each_entry(p, &mi->mnt_propagate, mnt_propagate) {
 			list_del_init(&p->mnt_notprop);
 		}
+
+		/* Delete self */
+		list_del_init(&mi->mnt_notprop);
 
 		/* Check not propagated mounts mounted and cleanup list */
 		list_for_each_entry_safe(p, t, &mi_notprop, mnt_notprop) {
