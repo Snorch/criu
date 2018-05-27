@@ -2404,8 +2404,10 @@ static bool can_mount_now(struct mount_info *mi)
 		return true;
 
 	/* Mount only after parent */
-	if (mi->parent && !mi->parent->mounted)
+	if (mi->parent && !mi->parent->mounted) {
+		pr_err("DEBUG1 %s\n", mi->mountpoint);
 		return false;
+	}
 
 	if (mi->external)
 		goto shared;
@@ -2419,21 +2421,29 @@ static bool can_mount_now(struct mount_info *mi)
 	if (mi->master_id > 0) {
 		struct mount_info *c, *s;
 
-		if (mi->bind == NULL)
+		if (mi->bind == NULL) {
+			pr_err("DEBUG2 %s\n", mi->mountpoint);
 			return false;
+		}
 
 		list_for_each_entry(c, &mi->mnt_master->children, siblings)
-			if (!c->mounted)
+			if (!c->mounted) {
+				pr_err("DEBUG3 %s\n", mi->mountpoint);
 				return false;
+			}
 
 		list_for_each_entry(s, &mi->mnt_master->mnt_share, mnt_share)
 			list_for_each_entry(c, &s->children, siblings)
-				if (!c->mounted)
+				if (!c->mounted) {
+					pr_err("DEBUG4 %s\n", mi->mountpoint);
 					return false;
+				}
 	}
 
-	if (!fsroot_mounted(mi) && (mi->bind == NULL && !mi->need_plugin))
+	if (!fsroot_mounted(mi) && (mi->bind == NULL && !mi->need_plugin)) {
+		pr_err("DEBUG5 %s\n", mi->mountpoint);
 		return false;
+	}
 
 shared:
 	/* Mount only after all parents of our propagation group mounted */
@@ -2442,8 +2452,13 @@ shared:
 
 		list_for_each_entry(p, &mi->mnt_propagate, mnt_propagate) {
 			BUG_ON(!p->parent);
-			if (!p->parent->mounted)
+			if (!p->parent->mounted) {
+				pr_err("DEBUG6 %d:%s depends on %d:%s\n",
+				       mi->mnt_id, mi->mountpoint,
+				       mi->parent->mnt_id,
+				       mi->parent->mountpoint);
 				return false;
+			}
 		}
 	}
 
@@ -2454,8 +2469,10 @@ shared:
 		list_for_each_entry(s, &mi->parent->children, siblings) {
 			if (mi == s || s->mounted)
 				continue;
-			if (issubpath(s->mountpoint, mi->mountpoint))
+			if (issubpath(s->mountpoint, mi->mountpoint)) {
+				pr_err("DEBUG7 %s\n", mi->mountpoint);
 				return false;
+			}
 		}
 	}
 
@@ -2502,13 +2519,17 @@ shared:
 
 		/* Check not propagated mounts mounted and cleanup list */
 		list_for_each_entry_safe(p, t, &mi_notprop, mnt_notprop) {
-			if (!p->mounted)
+			if (!p->mounted) {
+				pr_err("DEBUG8.0 depends on %d:%s\n", p->mnt_id, p->mountpoint);
 				can = false;
+			}
 			list_del_init(&p->mnt_notprop);
 		}
 
-		if (!can)
+		if (!can) {
+			pr_err("DEBUG8.1 %d:%s\n", mi->mnt_id, mi->mountpoint);
 			return false;
+		}
 	}
 
 	return true;
