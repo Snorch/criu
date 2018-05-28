@@ -2455,8 +2455,8 @@ shared:
 			if (!p->parent->mounted) {
 				pr_err("DEBUG6 %d:%s depends on %d:%s\n",
 				       mi->mnt_id, mi->mountpoint,
-				       mi->parent->mnt_id,
-				       mi->parent->mountpoint);
+				       p->parent->mnt_id,
+				       p->parent->mountpoint);
 				return false;
 			}
 		}

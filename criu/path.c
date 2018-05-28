@@ -106,7 +106,10 @@ char *mnt_get_sibling_path(struct mount_info *m,
 
 int root_path_from_parent(struct mount_info *m, char *buf, int size)
 {
-	int len;
+	bool head_slash = false, tail_slash = false;
+	int p_len = strlen(m->parent->mountpoint),
+	    m_len = strlen(m->mountpoint),
+	    len;
 
 	if (!m->parent)
 		return -1;
@@ -114,16 +117,23 @@ int root_path_from_parent(struct mount_info *m, char *buf, int size)
 	len = snprintf(buf, size, "%s", m->parent->root);
 	if (len >= size)
 		return -1;
+
 	BUG_ON(len <= 0);
 	if (buf[len-1] == '/')
-		len--;
+		tail_slash = true;
+
 	size -= len;
 	buf += len;
 
-	len = strlen(m->mountpoint) - strlen(m->parent->mountpoint);
+	len = m_len - p_len;
 	BUG_ON(len < 0);
 	if (len) {
-		len = snprintf(buf, size, "%s", m->mountpoint + strlen(m->parent->mountpoint));
+		if (m->mountpoint[p_len] == '/')
+			head_slash = true;
+
+		len = snprintf(buf, size, "%s%s",
+			       (!tail_slash && !head_slash) ? "/" : "",
+			       m->mountpoint + p_len - (tail_slash && head_slash));
 		if (len >= size)
 			return -1;
 	}
