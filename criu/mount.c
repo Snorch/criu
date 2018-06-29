@@ -2582,6 +2582,37 @@ static int do_close_one(struct mount_info *mi)
 	return 0;
 }
 
+/*
+ * Doublecheck we didn't mess up with a propagation, mounts from
+ * parent's share should not be mounted until now if mi should not
+ * propagate to them and vice versa
+ */
+static int validate_propagation(struct mount_info *mi)
+{
+	struct mount_info *s, *p, *t;
+	LIST_HEAD(mi_notprop);
+	int error = 0;
+
+	list_for_each_entry(s, &mi->parent->mnt_share, mnt_share)
+		list_add(&s->mnt_notprop, &mi_notprop);
+
+	list_for_each_entry(p, &mi->mnt_propagate, mnt_propagate) {
+		if (!p->parent->mounted)
+			error = 1;
+
+		list_del_init(&p->parent->mnt_notprop);
+	}
+
+	list_for_each_entry_safe(p, t, &mi_notprop, mnt_notprop) {
+		if (p->mounted)
+			error = 1;
+
+		list_del_init(&p->mnt_notprop);
+	}
+
+	return error;
+}
+
 static int do_mount_one(struct mount_info *mi)
 {
 	int ret;
@@ -2593,6 +2624,8 @@ static int do_mount_one(struct mount_info *mi)
 		pr_debug("Postpone slave %s\n", mi->mountpoint);
 		return 1;
 	}
+
+	BUG_ON(mi->parent && validate_propagation(mi));
 
 	if (!strcmp(mi->parent->mountpoint, mi->mountpoint)) {
 		mi->parent->fd = open(mi->parent->mountpoint, O_PATH);
