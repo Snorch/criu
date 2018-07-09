@@ -2465,22 +2465,38 @@ static int do_close_one(struct mount_info *mi)
 static int validate_propagation(struct mount_info *mi)
 {
 	struct mount_info *s, *p, *t;
+	char root_path[PATH_MAX];
 	LIST_HEAD(mi_notprop);
 	int error = 0;
 
-	list_for_each_entry(s, &mi->parent->mnt_share, mnt_share)
+	BUG_ON(root_path_from_parent(mi, root_path, PATH_MAX));
+
+	list_for_each_entry(s, &mi->parent->mnt_share, mnt_share) {
+		/* We are out of the root of s */
+		if (!issubpath(root_path, s->root))
+			continue;
+
 		list_add(&s->mnt_notprop, &mi_notprop);
+	}
 
 	list_for_each_entry(p, &mi->mnt_propagate, mnt_propagate) {
-		if (!p->parent->mounted)
+		if (!p->parent->mounted) {
+			pr_err("Invalid propagation %d[%d] -> %d[%d - not mounted]",
+				  mi->mnt_id, mi->parent->mnt_id,
+				  p->mnt_id, p->parent->mnt_id);
 			error = 1;
+		}
 
 		list_del_init(&p->parent->mnt_notprop);
 	}
 
 	list_for_each_entry_safe(p, t, &mi_notprop, mnt_notprop) {
-		if (p->mounted)
+		if (p->mounted) {
+			pr_err("Invalid miss-propagation %d[%d] -> ?[%d - mounted]",
+				  mi->mnt_id, mi->parent->mnt_id,
+				  p->mnt_id);
 			error = 1;
+		}
 
 		list_del_init(&p->mnt_notprop);
 	}
@@ -2500,7 +2516,8 @@ static int do_mount_one(struct mount_info *mi)
 		return 1;
 	}
 
-	BUG_ON(mi->parent && validate_propagation(mi));
+	if (mi->parent && validate_propagation(mi))
+		return -1;
 
 	if (!strcmp(mi->parent->mountpoint, mi->mountpoint)) {
 		mi->parent->fd = open(mi->parent->mountpoint, O_PATH);
