@@ -1815,7 +1815,7 @@ def grep_errors(fname):
 	before = []
 	for l in open(fname):
 		before.append(l)
-		if len(before) > 5:
+		if len(before) > 20:
 			before.pop(0)
 		if "Error" in l:
 			if first:
