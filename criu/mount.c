@@ -832,40 +832,10 @@ static int resolve_external_mounts(struct mount_info *info)
 
 static int root_path_from_parent(struct mount_info *m, char *buf, int size)
 {
-	bool head_slash = false, tail_slash = false;
-	int p_len, m_len, len;
-
 	if (!m->parent)
 		return -1;
 
-	p_len = strlen(m->parent->mountpoint);
-	m_len = strlen(m->mountpoint);
-
-	len = snprintf(buf, size, "%s", m->parent->root);
-	if (len >= size)
-		return -1;
-
-	BUG_ON(len <= 0);
-	if (buf[len-1] == '/')
-		tail_slash = true;
-
-	size -= len;
-	buf += len;
-
-	len = m_len - p_len;
-	BUG_ON(len < 0);
-	if (len) {
-		if (m->mountpoint[p_len] == '/')
-			head_slash = true;
-
-		len = snprintf(buf, size, "%s%s",
-			       (!tail_slash && !head_slash) ? "/" : "",
-			       m->mountpoint + p_len + (tail_slash && head_slash));
-		if (len >= size)
-			return -1;
-	}
-
-	return 0;
+	return get_root_path(m->mountpoint, m->parent, buf, size);
 }
 
 static int same_propagation_group(struct mount_info *a, struct mount_info *b) {

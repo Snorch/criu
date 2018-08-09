@@ -7,6 +7,7 @@
 #include "path.h"
 #include "log.h"
 #include "common/bug.h"
+#include "util.h"
 
 char *cut_root_for_bind(char *target_root, char *source_root)
 {
@@ -102,4 +103,42 @@ char *mnt_get_sibling_path(struct mount_info *m,
 		off = snprintf(path, len, "/%s", rpath);
 
 	return buf;
+}
+
+int get_root_path(char *path, struct mount_info *m, char *buf, int size)
+{
+	bool head_slash = false, tail_slash = false;
+	int p_len, m_len, len;
+
+	if (!issubpath(path, m->mountpoint))
+		return -1;
+
+	p_len = strlen(m->mountpoint);
+	m_len = strlen(path);
+
+	len = snprintf(buf, size, "%s", m->root);
+	if (len >= size)
+		return -1;
+
+	BUG_ON(len <= 0);
+	if (buf[len-1] == '/')
+		tail_slash = true;
+
+	size -= len;
+	buf += len;
+
+	len = m_len - p_len;
+	BUG_ON(len < 0);
+	if (len) {
+		if (path[p_len] == '/')
+			head_slash = true;
+
+		len = snprintf(buf, size, "%s%s",
+			       (!tail_slash && !head_slash) ? "/" : "",
+			       path + p_len + (tail_slash && head_slash));
+		if (len >= size)
+			return -1;
+	}
+
+	return 0;
 }
