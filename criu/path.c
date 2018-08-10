@@ -142,3 +142,31 @@ int get_root_path(char *path, struct mount_info *m, char *buf, int size)
 
 	return 0;
 }
+
+int get_full_path(char *root_path, struct mount_info *m, char *buf, int size) {
+	int rp_len, mr_len, len;
+
+	if (!issubpath(root_path, m->root))
+		return -1;
+
+	rp_len = strlen(root_path);
+	mr_len = strlen(m->root);
+
+	len = snprintf(buf, size, "%s", m->mountpoint);
+	if (len >= size)
+		return -1;
+	BUG_ON(len <= 0);
+
+	size -= len;
+	buf += len;
+
+	if (rp_len > mr_len) {
+		len = snprintf(buf, size, "%s%s",
+			       root_path[mr_len] == '/' ? "" : "/" ,
+			       root_path + mr_len);
+		if (len >= size)
+			return -1;
+	}
+
+	return 0;
+}

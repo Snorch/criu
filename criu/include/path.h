@@ -31,6 +31,7 @@ static inline int fsroot_mounted(struct mount_info *mi)
 
 char *cut_root_for_bind(char *target_root, char *source_root);
 int get_root_path(char *path, struct mount_info *m, char *buf, int size);
+int get_full_path(char *root_path, struct mount_info *m, char *buf, int size);
 
 /*
  * Get a mount point for a sibling of m if m->parent and p are in the same

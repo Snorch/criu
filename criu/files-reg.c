@@ -12,6 +12,7 @@
 #include <sys/sendfile.h>
 #include <sched.h>
 #include <sys/capability.h>
+#include <sys/mount.h>
 
 #ifndef SEEK_DATA
 #define SEEK_DATA	3
@@ -35,6 +36,7 @@
 #include "pstree.h"
 #include "fault-injection.h"
 #include "external.h"
+#include "path.h"
 
 #include "protobuf.h"
 #include "util.h"
@@ -352,25 +354,20 @@ err:
 	return ret;
 }
 
-static int create_ghost(struct ghost_file *gf, GhostFileEntry *gfe, struct cr_img *img)
+static int __create_ghost(struct ghost_file *gf, GhostFileEntry *gfe,
+			  struct cr_img *img, char *path, char *real_path,
+			  int root_len)
 {
-	char path[PATH_MAX];
-	int ret, root_len;
+	int ret = -1;
 	char *msg;
 
-	root_len = ret = rst_get_mnt_root(gf->remap.rmnt_id, path, sizeof(path));
-	if (ret < 0) {
-		pr_err("The %d mount is not found for ghost\n", gf->remap.rmnt_id);
-		goto err;
-	}
-
-	snprintf(path + ret, sizeof(path) - ret, "/%s", gf->remap.rpath);
-	ret = -1;
 again:
 	if (S_ISFIFO(gfe->mode)) {
+		pr_err("DEBUG[%s] #1\n", gf->remap.rpath);
 		if ((ret = mknod(path, gfe->mode, 0)) < 0)
 			msg = "Can't create node for ghost file";
 	} else if (S_ISCHR(gfe->mode) || S_ISBLK(gfe->mode)) {
+		pr_err("DEBUG[%s] #2\n", gf->remap.rpath);
 		if (!gfe->has_rdev) {
 			pr_err("No rdev for ghost device\n");
 			goto err;
@@ -378,9 +375,11 @@ again:
 		if ((ret = mknod(path, gfe->mode, gfe->rdev)) < 0)
 			msg = "Can't create node for ghost dev";
 	} else if (S_ISDIR(gfe->mode)) {
+		pr_err("DEBUG[%s] #3\n", gf->remap.rpath);
 		if ((ret = mkdirpat(AT_FDCWD, path, gfe->mode)) < 0)
 			msg = "Can't make ghost dir";
 	} else {
+		pr_err("DEBUG[%s] #4\n", gf->remap.rpath);
 		if ((ret = mkreg_ghost(path, gfe, img)) < 0)
 			msg = "Can't create ghost regfile";
 	}
@@ -388,8 +387,13 @@ again:
 	if (ret < 0) {
 		/* Use grand parent, if parent directory does not exist */
 		if (errno == ENOENT) {
+			pr_err("DEBUG[%s] trim\n", gf->remap.rpath);
 			if (trim_last_parent(path) < 0) {
 				pr_err("trim failed: @%s@\n", path);
+				goto err;
+			}
+			if (trim_last_parent(real_path) < 0) {
+				pr_err("trim failed: @%s@\n", real_path);
 				goto err;
 			}
 			goto again;
@@ -399,7 +403,8 @@ again:
 		goto err;
 	}
 
-	strcpy(gf->remap.rpath, path + root_len + 1);
+	pr_err("DEBUG[%s] real=%s path=%s\n", gf->remap.rpath, real_path, path);
+	strcpy(gf->remap.rpath, real_path + root_len);
 	pr_debug("Remap rpath is %s\n", gf->remap.rpath);
 
 	ret = -1;
@@ -409,6 +414,87 @@ again:
 	ret = 0;
 err:
 	return ret;
+}
+
+/* need to check string manipulations doesn't overflow buffer */
+
+static int create_ghost(struct ghost_file *gf, GhostFileEntry *gfe, struct cr_img *img)
+{
+	char path[PATH_MAX], real_path[PATH_MAX];
+	struct mount_info *m;
+	int root_len;
+
+	root_len =rst_get_mnt_root(gf->remap.rmnt_id, path, sizeof(path));
+	if (root_len < 0) {
+		pr_err("The %d mount is not found for ghost\n", gf->remap.rmnt_id);
+		return -1;
+	}
+
+	/* Add a '/' only if we have no at the end */
+	if (path[root_len-1] != '/') {
+		path[root_len++] = '/';
+		path[root_len] = '\0';
+	}
+
+	snprintf(path + root_len, sizeof(path) - root_len, "%s", gf->remap.rpath);
+	snprintf(real_path, sizeof(real_path), "%s", path);
+
+	m = lookup_mnt_id(gf->remap.rmnt_id);
+	if (m) {
+		if (m->sb_flags & MS_RDONLY) {
+			pr_err("Can't create ghost file on mount %d with ro sb\n",
+			       m->mnt_id);
+			return -1;
+		}
+
+		/*
+		 * If mount has no write permission we can't create a file on it,
+		 * but if we will find a writable bind-mount of the same superblock
+		 * we can create the file through these other mount
+		 */
+		if (m->flags & MS_RDONLY) {
+			struct mount_info *t, *rwbind = NULL;
+			char root_path[PATH_MAX];
+
+			if (get_root_path(path, m, root_path, PATH_MAX)) {
+				pr_err("Failed to get root path for path %s and mount %d\n",
+				       path, m->mnt_id);
+				return -1;
+			}
+
+			pr_err("DEBUG path=%s -> root_path=%s\n", path, root_path);
+
+			pr_info("Mount %d is ro, looking for rw bind-mount\n", m->mnt_id);
+			for (t = list_entry(m->mnt_bind.next, typeof(*m), mnt_bind);
+			     &t->mnt_bind != &m->mnt_bind;
+			     t = list_entry(t->mnt_bind.next, typeof(*t), mnt_bind)) {
+				if (!issubpath(root_path, t->root))
+					continue;
+				if (t->flags & MS_RDONLY)
+					continue;
+				BUG_ON(t->sb_flags & MS_RDONLY);
+
+				rwbind = t;
+				break;
+			}
+
+			if (!rwbind) {
+				pr_err("Can't find writable mount bind for %d to create ghost file on\n",
+				       m->mnt_id);
+				return -1;
+			}
+
+			/* Transform root_path to full path */
+			if (get_full_path(root_path, rwbind, path, PATH_MAX)) {
+				pr_err("Failed to get full path for root path %s and mount %d\n",
+				       root_path, rwbind->mnt_id);
+				return -1;
+			}
+			pr_err("DEBUG new path=%s\n", path);
+		}
+	}
+
+	return __create_ghost(gf, gfe, img, path, real_path, root_len);
 }
 
 static inline void ghost_path(char *path, int plen,
