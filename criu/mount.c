@@ -2084,6 +2084,13 @@ static int do_new_mount(struct mount_info *mi)
 		close(fd);
 	}
 
+	/*
+	 * Restoring ghost files on readonly mounts requires write access,
+	 * remount_readonly_mounts() will set these flags after all files
+	 * restored
+	 */
+	mflags &= ~MS_RDONLY;
+
 	if (mflags && mount(NULL, mi->mountpoint, NULL,
 				MS_REMOUNT | MS_BIND | mflags, NULL)) {
 		pr_perror("Unable to apply bind-mount options");
@@ -2101,6 +2108,95 @@ out:
 	mi->mounted = true;
 
 	return 0;
+}
+
+int __remount_readonly_mounts(struct ns_id *ns)
+{
+	struct mount_info *mnt;
+
+	for (mnt = mntinfo; mnt; mnt = mnt->next) {
+		if (ns && mnt->nsid != ns)
+			continue;
+
+		if (mnt->sb_flags & MS_RDONLY)
+			continue;
+
+		if (!(mnt->flags & MS_RDONLY))
+			continue;
+
+		if (mount(NULL, mnt->ns_mountpoint, NULL,
+			  MS_REMOUNT | MS_BIND | (mnt->flags & (~MS_PROPAGATE)),
+			  NULL)) {
+			pr_perror("Failed to restore %d:%s mount flags %x",
+				  mnt->mnt_id, mnt->mountpoint, mnt->flags);
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+int remount_readonly_mounts(void)
+{
+	int ret = 0, old_cwd, old_ns;
+	struct ns_id *nsid;
+
+	if (!(root_ns_mask & CLONE_NEWNS))
+		return __remount_readonly_mounts(NULL);
+
+	old_cwd = open(".", O_PATH);
+	if (old_cwd < 0) {
+		pr_perror("Unable to open cwd");
+		return -1;
+	}
+
+	old_ns = open_proc(PROC_SELF, "ns/mnt");
+	if (old_ns < 0) {
+		pr_perror("`- Can't keep old ns");
+		close(old_cwd);
+		return -1;
+	}
+
+	for (nsid = ns_ids; nsid != NULL; nsid = nsid->next) {
+		int mntns_fd;
+
+		if (nsid->nd != &mnt_ns_desc)
+			continue;
+
+		mntns_fd = fdstore_get(nsid->mnt.nsfd_id);
+		if (mntns_fd < 0) {
+			ret = -1;
+			goto err;
+		}
+
+		if (setns(mntns_fd, CLONE_NEWNS) < 0) {
+			pr_perror("`- Can't switch");
+			close(mntns_fd);
+			ret = -1;
+			goto err;
+		}
+		close(mntns_fd);
+
+		if (__remount_readonly_mounts(nsid)) {
+			ret = -1;
+			goto err;
+		}
+	}
+
+err:
+	if (setns(old_ns, CLONE_NEWNS) < 0) {
+		pr_perror("Fail to switch back!");
+		ret = -1;
+	}
+	close(old_ns);
+
+	if (fchdir(old_cwd)) {
+		pr_perror("Unable to restore cwd");
+		ret = -1;
+	}
+	close(old_cwd);
+
+	return ret;
 }
 
 static int restore_ext_mount(struct mount_info *mi)
