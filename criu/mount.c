@@ -2084,6 +2084,16 @@ static int do_new_mount(struct mount_info *mi)
 		close(fd);
 	}
 
+	/*
+	 * Restoring ghost files on readonly mounts requires write access,
+	 * remount_readonly_mounts() will set these flags after all files
+	 * restored
+	 */
+	if (!mnt_is_overmounted(mi))
+		mflags &= ~MS_RDONLY;
+	else if (mflags & MS_RDONLY)
+		pr_warn("Can't cut mount readonly flag for overmounted mount\n");
+
 	if (mflags && mount(NULL, mi->mountpoint, NULL,
 				MS_REMOUNT | MS_BIND | mflags, NULL)) {
 		pr_perror("Unable to apply bind-mount options");
@@ -2099,6 +2109,96 @@ static int do_new_mount(struct mount_info *mi)
 		return -1;
 out:
 	mi->mounted = true;
+
+	return 0;
+}
+
+int __remount_readonly_mounts(struct ns_id *ns)
+{
+	struct mount_info *mnt;
+
+	for (mnt = mntinfo; mnt; mnt = mnt->next) {
+		if (ns && mnt->nsid != ns)
+			continue;
+
+		if (mnt_is_overmounted(mnt))
+			continue;
+
+		if (mnt->sb_flags & MS_RDONLY)
+			continue;
+
+		if (!(mnt->flags & MS_RDONLY))
+			continue;
+
+		if (mount(NULL, mnt->ns_mountpoint, NULL,
+			  MS_REMOUNT | MS_BIND | (mnt->flags & (~MS_PROPAGATE)),
+			  NULL)) {
+			pr_perror("Failed to restore %d:%s mount flags %x",
+				  mnt->mnt_id, mnt->mountpoint, mnt->flags);
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+int ns_remount_readonly_mounts(void *arg)
+{
+	struct ns_id *nsid;
+
+	for (nsid = ns_ids; nsid != NULL; nsid = nsid->next) {
+		int mntns_fd;
+
+		if (nsid->nd != &mnt_ns_desc)
+			continue;
+
+		mntns_fd = fdstore_get(nsid->mnt.nsfd_id);
+		if (mntns_fd < 0)
+			return 1;
+
+		if (setns(mntns_fd, CLONE_NEWNS) < 0) {
+			pr_perror("`- Can't switch");
+			close(mntns_fd);
+			return 1;
+		}
+		close(mntns_fd);
+
+		pr_info("Switched to mntns %u:%u/n", nsid->id, nsid->kid);
+
+		if (__remount_readonly_mounts(nsid))
+			return 1;
+	}
+
+	return 0;
+}
+
+int remount_readonly_mounts(void)
+{
+	int pid, status;
+
+	if (!(root_ns_mask & CLONE_NEWNS))
+		return __remount_readonly_mounts(NULL);
+
+	/*
+	 * Need a helper process because the root task can share fs via
+	 * CLONE_FS and we would not be able to enter mount namespaces
+	 */
+	pid = clone_noasan(ns_remount_readonly_mounts,
+			   CLONE_VFORK | CLONE_VM | CLONE_FILES
+			   | CLONE_IO | CLONE_SIGHAND
+			   | CLONE_SYSVSEM, NULL);
+	if (pid == -1) {
+		pr_perror("Can't clone helper process");
+		return -1;
+	}
+
+	errno = 0;
+	if (waitpid(pid, &status, __WALL) != pid || !WIFEXITED(status)
+	    || WEXITSTATUS(status)) {
+		pr_err("Can't wait or bad status: errno=%d, status=%d\n",
+		       errno, status);
+		return -1;
+	}
 
 	return 0;
 }
