@@ -91,6 +91,11 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	if (mount(NULL, rw_mount, NULL, MS_RDONLY|MS_REMOUNT|MS_BIND, NULL)) {
+		pr_perror("mount");
+		return 1;
+	}
+
 	test_daemon();
 	test_waitsig();
 
