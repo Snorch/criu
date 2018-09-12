@@ -132,6 +132,11 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	if (mount("ro_mount", dirname, "tmpfs", 0, NULL)) {
+		pr_perror("mount");
+		return 1;
+	}
+
 	test_daemon();
 	test_waitsig();
 
@@ -157,6 +162,11 @@ int main(int argc, char **argv)
 
 	close(fd);
 	close(fd_bind);
+
+	if (umount(dirname)) {
+		pr_perror("Unable to umount %s", ro_mount);
+		return 1;
+	}
 
 	if (umount(ro_bind_mount)) {
 		pr_perror("Unable to umount %s", ro_bind_mount);
