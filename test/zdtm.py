@@ -905,7 +905,7 @@ class criu:
 		self.__fault = (opts['fault'])
 		self.__script = opts['script']
 		self.__sat = (opts['sat'] and True or False)
-		self.__dedup = (opts['dedup'] and True or False)
+		self.__dedup = True
 		self.__mdedup = (opts['noauto_dedup'] and True or False)
 		self.__user = (opts['user'] and True or False)
 		self.__leave_stopped = (opts['stop'] and True or False)
