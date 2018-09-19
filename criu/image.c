@@ -18,6 +18,7 @@
 #include "images/pagemap.pb-c.h"
 #include "proc_parse.h"
 #include "img-remote.h"
+#include "namespaces.h"
 
 bool ns_per_id = false;
 bool img_common_magic = true;
@@ -412,6 +413,23 @@ int do_open_remote_image(int dfd, char *path, int flags)
 	return ret;
 }
 
+struct path_args {
+	char	path[PATH_MAX];
+	int	flags;
+	int	err;
+};
+
+static int userns_openat(void *arg, int fd, int pid)
+{
+	struct path_args *pa = (struct path_args *)arg;
+	int ret;
+
+	ret = openat(fd, pa->path, pa->flags, CR_FD_PERM);
+	if (ret < 0)
+		pa->err = errno;
+	return ret;
+}
+
 static int do_open_image(struct cr_img *img, int dfd, int type, unsigned long oflags, char *path)
 {
 	int ret, flags;
@@ -420,8 +438,19 @@ static int do_open_image(struct cr_img *img, int dfd, int type, unsigned long of
 
 	if (opts.remote && !(oflags & O_FORCE_LOCAL))
 		ret = do_open_remote_image(dfd, path, flags);
-	else
-		ret = openat(dfd, path, flags, CR_FD_PERM);
+	else {
+		if (oflags & O_RDWR) {
+			struct path_args pa = {
+				.flags = flags,
+				.err = 0,
+			};
+			snprintf(pa.path, PATH_MAX, "%s", path);
+			ret = userns_call(userns_openat, UNS_FDOUT, &pa, sizeof(struct path_args), dfd);
+			if (ret < 0)
+				errno = pa.err;
+		} else
+			ret = openat(dfd, path, flags, CR_FD_PERM);
+	}
 	if (ret < 0) {
 		if (!(flags & O_CREAT) && (errno == ENOENT || ret == -ENOENT)) {
 			pr_info("No %s image\n", path);
