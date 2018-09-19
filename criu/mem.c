@@ -29,6 +29,7 @@
 #include "pagemap-cache.h"
 #include "fault-injection.h"
 #include "prctl.h"
+#include "namespaces.h"
 #include <compel/compel.h>
 
 #include "protobuf.h"
@@ -1295,28 +1296,39 @@ int open_vmas(struct pstree_item *t)
 	return 0;
 }
 
-static int prepare_vma_ios(struct pstree_item *t, struct task_restore_args *ta)
+static int open_pages_fd_rw(void *arg, int fd, int pid)
 {
 	struct cr_img *pages;
-
-	/* if auto-dedup is on we need RDWR mode to be able to punch holes
-	 * in the input files (in restorer.c)
-	 */
-	pages = open_image(CR_FD_PAGES, opts.auto_dedup ? O_RDWR : O_RSTR,
-				rsti(t)->pages_img_id);
-	/* When running inside namespace we might lack privileges to open the file
-	 * for writing.
-	 * TODO: use userns_call to do the opening instead of downgrading to opening
-	 * read-only.
-	 */
-	if (!pages && opts.auto_dedup) {
-		pr_warn("Failed to open image read-write, trying read-only instead. auto-dedup won't work\n");
-		pages = open_image(CR_FD_PAGES, O_RSTR, rsti(t)->pages_img_id);
-	}
+	pages = open_image(CR_FD_PAGES, O_RDWR, *(unsigned int *)arg);
 	if (!pages)
 		return -1;
+	return img_raw_fd(pages);
+}
 
-	ta->vma_ios_fd = img_raw_fd(pages);
+static int prepare_vma_ios(struct pstree_item *t, struct task_restore_args *ta)
+{
+	int fd;
+
+	if (!opts.auto_dedup) {
+		struct cr_img *pages;
+		pages = open_image(CR_FD_PAGES, O_RSTR, rsti(t)->pages_img_id);
+		if (!pages)
+			return -1;
+		fd = img_raw_fd(pages);
+	} else {
+		/*
+		 * If auto-dedup is on we need RDWR mode to be able to punch holes
+		 * in the input files (in restorer.c), use userns_call to have proper
+		 * privileges to open the file for writing.
+		 */
+		fd = userns_call(open_pages_fd_rw, UNS_FDOUT, &rsti(t)->pages_img_id,
+				 sizeof(unsigned int), -1);
+	}
+
+	if (fd < 0)
+		return -1;
+	ta->vma_ios_fd = fd;
+
 	return pagemap_render_iovec(&rsti(t)->vma_io, ta);
 }
 
