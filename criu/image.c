@@ -439,7 +439,13 @@ static int do_open_image(struct cr_img *img, int dfd, int type, unsigned long of
 	if (opts.remote && !(oflags & O_FORCE_LOCAL))
 		ret = do_open_remote_image(dfd, path, flags);
 	else {
-		if (oflags & O_RDWR) {
+		/*
+		 * For dedup we need to open images read-write on restore,
+		 * that may require proper capabilities.
+		 */
+		if (root_ns_mask & CLONE_NEWUSER
+		    && type == CR_FD_PAGES
+		    && oflags & O_RDWR) {
 			struct path_args pa = {
 				.flags = flags,
 				.err = 0,
