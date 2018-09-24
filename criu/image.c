@@ -454,6 +454,8 @@ static int do_open_image(struct cr_img *img, int dfd, int type, unsigned long of
 			ret = userns_call(userns_openat, UNS_FDOUT, &pa, sizeof(struct path_args), dfd);
 			if (ret < 0)
 				errno = pa.err;
+			else
+				lseek(ret, 0, SEEK_SET);
 		} else
 			ret = openat(dfd, path, flags, CR_FD_PERM);
 	}
