@@ -1393,13 +1393,12 @@ long __export_restore_task(struct task_restore_args *args)
 			/* If the file is open for writing, then it means we should punch holes
 			 * in it. */
 			if (r > 0 && args->auto_dedup) {
-				/*
 				int fr = sys_fallocate(args->vma_ios_fd, FALLOC_FL_KEEP_SIZE|FALLOC_FL_PUNCH_HOLE,
 					rio->off, r);
+				pr_err("DEBUG fallocate /%p/%ld/\n", (void *)rio->off, (long)r);
 				if (fr < 0) {
 					pr_debug("Failed to punch holes with fallocate: %d\n", fr);
 				}
-				*/
 			}
 			rio->off += r;
 			/* Advance the iovecs */
