@@ -831,6 +831,9 @@ class criu_rpc:
 				inhfd.fd = int(fd[3:-1])
 				inhfd.key = key
 				continue
+			if arg == '--auto-dedup':
+				criu.opts.auto_dedup = True
+				continue
 
 			raise test_fail_exc('RPC for %s required' % arg)
 
@@ -1147,6 +1150,9 @@ class criu:
 
 		if self.__remote:
 			r_opts += ["--remote"]
+
+		if self.__dedup:
+			r_opts += ["--auto-dedup"]
 
 		self.__prev_dump_iter = None
 		criu_dir = os.path.dirname(os.getcwd())
