@@ -51,7 +51,7 @@ static inline bool can_extend_bunch(struct iovec *bunch,
 static int punch_hole(struct page_read *pr, unsigned long off,
 		      unsigned long len, bool cleanup)
 {
-	int ret;
+	//int ret;
 	struct iovec * bunch = &pr->bunch;
 
 	if (!cleanup && can_extend_bunch(bunch, off, len)) {
@@ -61,12 +61,14 @@ static int punch_hole(struct page_read *pr, unsigned long off,
 	} else {
 		if (bunch->iov_len > 0) {
 			pr_debug("Punch!/%p/%zu/\n", bunch->iov_base, bunch->iov_len);
+			/*
 			ret = fallocate(img_raw_fd(pr->pi), FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
 					(unsigned long)bunch->iov_base, bunch->iov_len);
 			if (ret != 0) {
 				pr_perror("Error punching hole");
 				return -1;
 			}
+			*/
 		}
 		bunch->iov_base = (void *)off;
 		bunch->iov_len = len;
