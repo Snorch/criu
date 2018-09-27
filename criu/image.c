@@ -451,6 +451,7 @@ static int do_open_image(struct cr_img *img, int dfd, int type, unsigned long of
 				.err = 0,
 			};
 			snprintf(pa.path, PATH_MAX, "%s", path);
+			pr_err("DEBUG userns_openat %s\n", path);
 			ret = userns_call(userns_openat, UNS_FDOUT, &pa, sizeof(struct path_args), dfd);
 			if (ret < 0)
 				errno = pa.err;
