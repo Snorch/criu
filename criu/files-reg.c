@@ -12,6 +12,7 @@
 #include <sys/sendfile.h>
 #include <sched.h>
 #include <sys/capability.h>
+#include <sys/mount.h>
 
 #ifndef SEEK_DATA
 #define SEEK_DATA	3
@@ -354,6 +355,7 @@ err:
 
 static int create_ghost(struct ghost_file *gf, GhostFileEntry *gfe, struct cr_img *img)
 {
+	struct mount_info *mi;
 	char path[PATH_MAX];
 	int ret, root_len;
 	char *msg;
@@ -372,6 +374,26 @@ static int create_ghost(struct ghost_file *gf, GhostFileEntry *gfe, struct cr_im
 
 	snprintf(path + root_len, sizeof(path) - root_len, "%s", gf->remap.rpath);
 	ret = -1;
+
+	mi = lookup_mnt_id(gf->remap.rmnt_id);
+	if (mi) {
+		if (mnt_is_overmounted(mi)) {
+			pr_err("The mount %d is overmounted so paths are invisible\n", mi->mnt_id);
+			return -1;
+		}
+
+		if (mi->sb_flags & MS_RDONLY) {
+			pr_err("The mount %d with readonly sb should not contain ghost-files\n", mi->mnt_id);
+			return -1;
+		}
+
+		pr_info("Remount %d:%s writable\n", mi->mnt_id, mi->mountpoint);
+		if (mount(NULL, mi->mountpoint, NULL, MS_REMOUNT | MS_BIND, NULL) == -1) {
+			pr_perror("Failed to bind remount %s writable", path);
+			return -1;
+		}
+		mi->remounted_ro = true;
+	}
 again:
 	if (S_ISFIFO(gfe->mode)) {
 		if ((ret = mknod(path, gfe->mode, 0)) < 0)
@@ -696,9 +718,10 @@ int prepare_remaps(void)
 
 static int clean_one_remap(struct remap_info *ri)
 {
-	char path[PATH_MAX];
-	int mnt_id, ret, rmntns_root;
 	struct file_remap *remap = ri->rfi->remap;
+	int mnt_id, ret, rmntns_root;
+	struct mount_info *mi;
+	char path[PATH_MAX];
 
 	if (remap->rpath[0] == 0)
 		return 0;
@@ -716,6 +739,26 @@ static int clean_one_remap(struct remap_info *ri)
 	if (rmntns_root < 0) {
 		pr_perror("Unable to open %s", path);
 		return -1;
+	}
+
+	mi = lookup_mnt_id(mnt_id);
+	if (mi) {
+		if (mnt_is_overmounted(mi)) {
+			pr_err("The mount %d is overmounted so paths are invisible\n", mi->mnt_id);
+			return -1;
+		}
+
+		if (mi->sb_flags & MS_RDONLY) {
+			pr_err("The mount %d with readonly sb should not contain ghost-files\n", mi->mnt_id);
+			return -1;
+		}
+
+		pr_info("Remount %d:%s writable\n", mi->mnt_id, mi->mountpoint);
+		if (mount(NULL, mi->mountpoint, NULL, MS_REMOUNT | MS_BIND, NULL) == -1) {
+			pr_perror("Failed to bind remount %s writable", path);
+			return -1;
+		}
+		mi->remounted_ro = true;
 	}
 
 	pr_info("Unlink remap %s\n", remap->rpath);
@@ -1551,6 +1594,43 @@ out:
 }
 
 /*
+ * Does bind remount of mount with new flags by mountpoint path relative to fd
+ */
+int bind_remount_at(int fd, char *path, int flags)
+{
+	int ret = -1, cwd;
+
+	BUG_ON(path[0] == '/');
+
+	cwd = open(".", O_PATH);
+	if (cwd == -1) {
+		pr_perror("Failed to open cwd");
+		return -1;
+	}
+
+	if (fchdir(fd) == -1) {
+		pr_perror("Failed to fchdir");
+		goto close;
+	}
+
+	if (mount(NULL, path, NULL, MS_REMOUNT | MS_BIND | flags, NULL) == -1) {
+		pr_perror("Failed to bind remount %s at %d with flags %x",
+			  path, fd, flags);
+		goto fchdir;
+	}
+
+	ret = 0;
+fchdir:
+	if (fchdir(cwd) == -1) {
+		pr_perror("Failed to fchdir back");
+		ret = -1;
+	}
+close:
+	close(cwd);
+	return ret;
+}
+
+/*
  * This routine properly resolves d's path handling ghost/link-remaps.
  * The open_cb is a routine that does actual open, it differs for
  * files, directories, fifos, etc.
@@ -1598,9 +1678,37 @@ static int rfi_remap(struct reg_file_info *rfi, int *level)
 	convert_path_from_another_mp(rfi->remap->rpath, rpath, sizeof(_rpath), rmi, tmi);
 
 out:
-	pr_debug("%d: Link %s -> %s\n", tmi->mnt_id, rpath, path);
 	mntns_root = mntns_get_root_fd(tmi->nsid);
+	/* Try remount tmi writable if it has MS_RDONLY flag set */
+	if (tmi->flags & MS_RDONLY && !tmi->remounted_ro_ns) {
+		char *mp = tmi->ns_mountpoint;
 
+		while (mp[0] == '/')
+			mp++;
+
+		if (mp[0] == '\0')
+			mp = "./";
+
+		if (mnt_is_overmounted(tmi)) {
+			pr_err("The mount %d is overmounted so paths are invisible\n", tmi->mnt_id);
+			return -1;
+		}
+
+		if (tmi->sb_flags & MS_RDONLY) {
+			pr_err("The mount %d with readonly sb should not contain ghost-files\n", tmi->mnt_id);
+			return -1;
+		}
+
+		pr_info("Remount %d:%s writable\n", tmi->mnt_id, tmi->mountpoint);
+		if (bind_remount_at(mntns_root, mp , 0) == -1) {
+			pr_perror("Failed to remount %d:%s writable",
+				  tmi->mnt_id, tmi->mountpoint);
+			return -1;
+		}
+		tmi->remounted_ro_ns = true;
+	}
+
+	pr_debug("%d: Link %s -> %s\n", tmi->mnt_id, rpath, path);
 out_root:
 	*level = make_parent_dirs_if_need(mntns_root, path);
 	if (*level < 0)
