@@ -3682,3 +3682,167 @@ void clean_cr_time_mounts(void)
 }
 
 struct ns_desc mnt_ns_desc = NS_DESC_ENTRY(CLONE_NEWNS, "mnt");
+
+static int rw_remount_at(int fd, char *path)
+{
+	int ret = -1, cwd;
+
+	/* path should be relative */
+	BUG_ON(path[0] == '/');
+
+	cwd = open(".", O_PATH);
+	if (cwd == -1) {
+		pr_perror("Failed to open cwd");
+		return -1;
+	}
+
+	if (fchdir(fd) == -1) {
+		pr_perror("Failed to fchdir");
+		goto close;
+	}
+
+	if (mount(NULL, path, NULL, MS_REMOUNT | MS_BIND, NULL) == -1) {
+		pr_perror("Failed to bind remount %s at %d", path, fd);
+		goto fchdir;
+	}
+
+	ret = 0;
+fchdir:
+	if (fchdir(cwd) == -1) {
+		pr_perror("Failed to fchdir back");
+		ret = -1;
+	}
+close:
+	close(cwd);
+	return ret;
+}
+
+int try_remount_writable(struct mount_info *mi, int mntns_root) {
+	if (mi->flags & MS_RDONLY && !mi->remounted_rw) {
+		if (mnt_is_overmounted(mi)) {
+			pr_err("The mount %d is overmounted so paths are invisible\n", mi->mnt_id);
+			return -1;
+		}
+
+		if (mi->sb_flags & MS_RDONLY) {
+			pr_err("The mount %d with readonly sb can't be remounted writable\n", mi->mnt_id);
+			return -1;
+		}
+
+		pr_info("Remount %d:%s writable\n", mi->mnt_id, mi->mountpoint);
+		if (mntns_root == -1) {
+			if (mount(NULL, mi->mountpoint, NULL, MS_REMOUNT | MS_BIND, NULL) == -1)
+				goto err;
+		} else {
+			char *mp = mi->ns_mountpoint + 1;
+
+			/* FIXME ns_mountpoints should be absolute */
+			BUG_ON(mi->ns_mountpoint[0] == '/');
+
+			if(mp[0] == '\0')
+				mp = "./";
+
+			if (rw_remount_at(mntns_root, mp) == -1)
+				goto err;
+		}
+		mi->remounted_rw = true;
+	}
+
+	return 0;
+err:
+	pr_perror("Failed to remount %d:%s writable", mi->mnt_id, mi->mountpoint);
+	return -1;
+}
+
+int __remount_readonly_mounts(struct ns_id *ns)
+{
+	struct mount_info *mnt;
+
+	for (mnt = mntinfo; mnt; mnt = mnt->next) {
+		if (ns && mnt->nsid != ns)
+			continue;
+
+		if (!mnt->remounted_rw)
+			continue;
+
+		if (mnt_is_overmounted(mnt))
+			continue;
+
+		if (mnt->sb_flags & MS_RDONLY)
+			continue;
+
+		if (!(mnt->flags & MS_RDONLY))
+			continue;
+
+		if (mount(NULL, mnt->ns_mountpoint, NULL,
+			  MS_REMOUNT | MS_BIND | (mnt->flags & (~MS_PROPAGATE)),
+			  NULL)) {
+			pr_perror("Failed to restore %d:%s mount flags %x",
+				  mnt->mnt_id, mnt->mountpoint, mnt->flags);
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+int ns_remount_readonly_mounts(void *arg)
+{
+	struct ns_id *nsid;
+
+	for (nsid = ns_ids; nsid != NULL; nsid = nsid->next) {
+		int mntns_fd;
+
+		if (nsid->nd != &mnt_ns_desc)
+			continue;
+
+		mntns_fd = fdstore_get(nsid->mnt.nsfd_id);
+		if (mntns_fd < 0)
+			return 1;
+
+		if (setns(mntns_fd, CLONE_NEWNS) < 0) {
+			pr_perror("`- Can't switch");
+			close(mntns_fd);
+			return 1;
+		}
+		close(mntns_fd);
+
+		pr_info("Switched to mntns %u:%u/n", nsid->id, nsid->kid);
+
+		if (__remount_readonly_mounts(nsid))
+			return 1;
+	}
+
+	return 0;
+}
+
+int remount_readonly_mounts(void)
+{
+	int pid, status;
+
+	if (!(root_ns_mask & CLONE_NEWNS))
+		return __remount_readonly_mounts(NULL);
+
+	/*
+	 * Need a helper process because the root task can share fs via
+	 * CLONE_FS and we would not be able to enter mount namespaces
+	 */
+	pid = clone_noasan(ns_remount_readonly_mounts,
+			   CLONE_VFORK | CLONE_VM | CLONE_FILES
+			   | CLONE_IO | CLONE_SIGHAND
+			   | CLONE_SYSVSEM, NULL);
+	if (pid == -1) {
+		pr_perror("Can't clone helper process");
+		return -1;
+	}
+
+	errno = 0;
+	if (waitpid(pid, &status, __WALL) != pid || !WIFEXITED(status)
+	    || WEXITSTATUS(status)) {
+		pr_err("Can't wait or bad status: errno=%d, status=%d\n",
+		       errno, status);
+		return -1;
+	}
+
+	return 0;
+}

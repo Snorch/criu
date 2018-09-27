@@ -71,7 +71,7 @@ struct mount_info {
 	struct list_head	postpone;
 
 	int			is_overmounted;
-
+	int			remounted_rw;
 	void			*private;	/* associated filesystem data */
 };
 
@@ -127,5 +127,8 @@ struct ns_id;
 extern struct mount_info *parse_mountinfo(pid_t pid, struct ns_id *nsid, bool for_dump);
 
 extern int check_mnt_id(void);
+
+extern int remount_readonly_mounts(void);
+extern int try_remount_writable(struct mount_info *mi, int mntns_root);
 
 #endif /* __CR_MOUNT_H__ */

@@ -12,6 +12,7 @@
 #include <sys/sendfile.h>
 #include <sched.h>
 #include <sys/capability.h>
+#include <sys/mount.h>
 
 #ifndef SEEK_DATA
 #define SEEK_DATA	3
@@ -354,6 +355,7 @@ err:
 
 static int create_ghost(struct ghost_file *gf, GhostFileEntry *gfe, struct cr_img *img)
 {
+	struct mount_info *mi;
 	char path[PATH_MAX];
 	int ret, root_len;
 	char *msg;
@@ -372,6 +374,11 @@ static int create_ghost(struct ghost_file *gf, GhostFileEntry *gfe, struct cr_im
 
 	snprintf(path + root_len, sizeof(path) - root_len, "%s", gf->remap.rpath);
 	ret = -1;
+
+	mi = lookup_mnt_id(gf->remap.rmnt_id);
+
+	if (mi && try_remount_writable(mi, -1))
+			return -1;
 again:
 	if (S_ISFIFO(gfe->mode)) {
 		if ((ret = mknod(path, gfe->mode, 0)) < 0)
@@ -696,9 +703,10 @@ int prepare_remaps(void)
 
 static int clean_one_remap(struct remap_info *ri)
 {
-	char path[PATH_MAX];
-	int mnt_id, ret, rmntns_root;
 	struct file_remap *remap = ri->rfi->remap;
+	int mnt_id, ret, rmntns_root;
+	struct mount_info *mi;
+	char path[PATH_MAX];
 
 	if (remap->rpath[0] == 0)
 		return 0;
@@ -717,6 +725,10 @@ static int clean_one_remap(struct remap_info *ri)
 		pr_perror("Unable to open %s", path);
 		return -1;
 	}
+
+	mi = lookup_mnt_id(mnt_id);
+	if (mi && try_remount_writable(mi, -1))
+			return -1;
 
 	pr_info("Unlink remap %s\n", remap->rpath);
 
@@ -1598,9 +1610,12 @@ static int rfi_remap(struct reg_file_info *rfi, int *level)
 	convert_path_from_another_mp(rfi->remap->rpath, rpath, sizeof(_rpath), rmi, tmi);
 
 out:
-	pr_debug("%d: Link %s -> %s\n", tmi->mnt_id, rpath, path);
 	mntns_root = mntns_get_root_fd(tmi->nsid);
 
+	if (try_remount_writable(tmi, mntns_root))
+		return -1;
+
+	pr_debug("%d: Link %s -> %s\n", tmi->mnt_id, rpath, path);
 out_root:
 	*level = make_parent_dirs_if_need(mntns_root, path);
 	if (*level < 0)
