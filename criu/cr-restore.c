@@ -114,6 +114,7 @@
 #endif
 
 struct pstree_item *current;
+int mnt_ns_fd_id;
 
 static int restore_task_with_children(void *);
 static int sigreturn_restore(pid_t pid, struct task_restore_args *ta, unsigned long alen, CoreEntry *core);
@@ -1722,6 +1723,26 @@ static int restore_task_with_children(void *_arg)
 		if (prepare_namespace(current, ca->clone_flags))
 			goto err;
 
+		/*
+		 * Lets provide an access to the service mount namespace while
+		 * on it, mnt_ns_fd_id will be inherited by all children of
+		 * init task.
+		 */
+		if (root_ns_mask & CLONE_NEWNS) {
+			int mnt_ns_fd;
+
+			mnt_ns_fd = open_proc(PROC_SELF, "ns/mnt");
+			if (mnt_ns_fd < 0)
+				goto err;
+
+			mnt_ns_fd_id = fdstore_add(mnt_ns_fd);
+			if (mnt_ns_fd_id == -1) {
+				close(mnt_ns_fd);
+				goto err;
+			}
+			close(mnt_ns_fd);
+		}
+
 		if (restore_finish_ns_stage(CR_STATE_PREPARE_NAMESPACES, CR_STATE_FORKING) < 0)
 			goto err;
 
@@ -2026,12 +2047,19 @@ static int write_restored_pid(void)
 	return 0;
 }
 
+static int setup_service_mntns(void *arg, int fd, int pid) {
+	mnt_ns_fd_id = *(int *)arg;
+	return 0;
+}
+
 static int restore_root_task(struct pstree_item *init)
 {
 	enum trace_flags flag = TRACE_ALL;
 	int ret, fd, mnt_ns_fd = -1;
-	int root_seized = 0;
 	struct pstree_item *item;
+	int root_seized = 0;
+
+	mnt_ns_fd_id = -1;
 
 	ret = run_scripts(ACT_PRE_RESTORE);
 	if (ret != 0) {
@@ -2133,6 +2161,24 @@ static int restore_root_task(struct pstree_item *init)
 		mnt_ns_fd = open_proc(init->pid->real, "ns/mnt");
 		if (mnt_ns_fd < 0)
 			goto out_kill;
+
+		/*
+		 * Lets provide an access to the service mount namespace to
+		 * ourselfs and to usernsd if started.
+		 */
+		mnt_ns_fd_id = fdstore_add(mnt_ns_fd);
+		if (mnt_ns_fd_id == -1) {
+			close(mnt_ns_fd);
+			goto out_kill;
+		}
+
+		if (root_ns_mask & CLONE_NEWUSER) {
+			if (userns_call(setup_service_mntns, 0, &mnt_ns_fd_id, sizeof(int), -1)) {
+				pr_err("Failed to setup service mntns for usernsd");
+				close(mnt_ns_fd);
+				goto out_kill;
+			}
+		}
 	}
 
 	if (opts.empty_ns & CLONE_NEWNET) {
