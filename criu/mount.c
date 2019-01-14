@@ -3691,10 +3691,13 @@ static int call_helper_process(int (*call)(void *), void *arg)
 	}
 
 	errno = 0;
-	if (waitpid(pid, &status, __WALL) != pid || !WIFEXITED(status)
-	    || WEXITSTATUS(status)) {
-		pr_err("Can't wait or bad status: errno=%d, status=%d\n",
-		       errno, status);
+	if (waitpid(pid, &status, __WALL) != pid) {
+		pr_perror("Unable to wait %d", pid);
+		return -1;
+	}
+
+	if (status) {
+		pr_err("Bad child exit status: %d\n", status);
 		return -1;
 	}
 
