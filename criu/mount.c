@@ -3711,14 +3711,17 @@ static int ns_remount_writable(void *arg)
 
 	if (do_restore_task_mnt_ns(ns))
 		return 1;
-	pr_info("Switched to mntns %u:%u/n", ns->id, ns->kid);
+	pr_debug("Switched to mntns %u:%u/n", ns->id, ns->kid);
 
-	if (mount(NULL, mi->ns_mountpoint, NULL, MS_REMOUNT | MS_BIND, NULL) == -1)
+	if (mount(NULL, mi->ns_mountpoint, NULL, MS_REMOUNT | MS_BIND, NULL) == -1) {
+		pr_perror("Failed to remount %d:%s writable", mi->mnt_id, mi->mountpoint);
 		return 1;
+	}
 	return 0;
 }
 
-int try_remount_writable(struct mount_info *mi, bool ns) {
+int try_remount_writable(struct mount_info *mi, bool ns)
+{
 	int remounted = REMOUNTED_RW;
 
 	/* Don't remount if we are in host mntns to be on the safe side */
@@ -3742,19 +3745,18 @@ int try_remount_writable(struct mount_info *mi, bool ns) {
 
 		pr_info("Remount %d:%s writable\n", mi->mnt_id, mi->mountpoint);
 		if (!ns) {
-			if (mount(NULL, mi->mountpoint, NULL, MS_REMOUNT | MS_BIND, NULL) == -1)
-				goto err;
+			if (mount(NULL, mi->mountpoint, NULL, MS_REMOUNT | MS_BIND, NULL) == -1) {
+				pr_perror("Failed to remount %d:%s writable", mi->mnt_id, mi->mountpoint);
+				return -1;
+			}
 		} else {
 			if (call_helper_process(ns_remount_writable, mi))
-				goto err;
+				return -1;
 		}
 		mi->remounted_rw |= remounted;
 	}
 
 	return 0;
-err:
-	pr_perror("Failed to remount %d:%s writable", mi->mnt_id, mi->mountpoint);
-	return -1;
 }
 
 static int __remount_readonly_mounts(struct ns_id *ns)
@@ -3778,9 +3780,10 @@ static int __remount_readonly_mounts(struct ns_id *ns)
 			if (do_restore_task_mnt_ns(ns))
 				return -1;
 			mntns_set = true;
-			pr_info("Switched to mntns %u:%u/n", ns->id, ns->kid);
+			pr_debug("Switched to mntns %u:%u/n", ns->id, ns->kid);
 		}
 
+		pr_info("Remount %d:%s back to readonly\n", mi->mnt_id, mi->mountpoint);
 		if (mount(NULL, mi->ns_mountpoint, NULL,
 			  MS_REMOUNT | MS_BIND | (mi->flags & (~MS_PROPAGATE)),
 			  NULL)) {
