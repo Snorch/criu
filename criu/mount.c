@@ -3821,3 +3821,136 @@ int remount_readonly_mounts(void)
 	 */
 	return call_helper_process(ns_remount_readonly_mounts, NULL);
 }
+
+static struct mount_info *mnt_next(struct mount_info *mi, struct mount_info *root, int *status)
+{
+	*status = 0;
+
+	if (!list_empty(&mi->children))
+		return list_entry(mi->children.next, struct mount_info, siblings);
+
+	*status = 1;
+
+	while (mi->parent && mi != root) {
+		if (mi->siblings.next == &mi->parent->children) {
+			mi = mi->parent;
+			(*status)++;
+		} else
+			return list_entry(mi->siblings.next, struct mount_info, siblings);
+	}
+
+	*status = -1;
+	return NULL;
+}
+
+static void mnt_resort_siblings2(struct mount_info *tree);
+
+static int __check_mounts(struct ns_id *ns)
+{
+	struct ns_id _new_ns = { .ns_pid = PROC_SELF, .nd = &mnt_ns_desc }, *new_ns = &_new_ns;
+	struct mount_info *mnt, *new_mnt, *new;
+	int status, new_status;
+
+	if (do_restore_task_mnt_ns(ns))
+		return -1;
+
+	pr_debug("Checking mountinfo for mntns %d:%d\n", ns->kid, ns->id);
+	new = collect_mntinfo(new_ns, true);
+	if (new == NULL)
+		return -1;
+
+
+	mnt = ns->mnt.mntinfo_tree;
+	new_mnt = new_ns->mnt.mntinfo_tree;
+	mnt_resort_siblings2(mnt);
+	mnt_resort_siblings2(new_mnt);
+
+	while (mnt && new_mnt) {
+		if (strcmp(mnt->ns_mountpoint, new_mnt->ns_mountpoint+1) ||
+		    strcmp(mnt->root, new_mnt->root) ||
+		    mnt->flags != new_mnt->flags ||
+		    mnt->sb_flags != new_mnt->sb_flags) {
+			pr_err("Mounts %s[%s,%d,%d] and %s[%s,%d,%d] does not match\n",
+			       mnt->ns_mountpoint, mnt->root, mnt->flags, mnt->sb_flags,
+			       new_mnt->ns_mountpoint+1, new_mnt->root, new_mnt->flags, new_mnt->sb_flags);
+			goto err;
+		}
+
+		mnt = mnt_next(mnt, ns->mnt.mntinfo_tree, &status);
+		new_mnt = mnt_next(new_mnt, new_ns->mnt.mntinfo_tree, &new_status);
+
+		if (status != new_status) {
+			pr_err("The restored mount tree for mntns %d:%d has wrong topology\n",
+			       ns->kid, ns->id);
+			goto err;
+		}
+	}
+
+	return 0;
+err:
+	pr_err("Old tree:\n");
+	mnt_tree_show(ns->mnt.mntinfo_tree, 0);
+	pr_err("New tree:\n");
+	mnt_tree_show(new_ns->mnt.mntinfo_tree, 0);
+	return -1;
+}
+
+static int ns_check_mounts(void *arg)
+{
+	struct ns_id *nsid;
+	int *ret = arg;
+
+	for (nsid = ns_ids; nsid != NULL; nsid = nsid->next) {
+		if (nsid->nd != &mnt_ns_desc)
+			continue;
+
+		*ret = __check_mounts(nsid);
+		if (*ret)
+			return 0;
+	}
+
+	return 0;
+}
+int check_mounts(void)
+{
+	int ret = 0;
+
+	if (call_helper_process(ns_check_mounts, &ret))
+		return -1;
+
+	return ret;
+}
+
+static void mnt_resort_siblings2(struct mount_info *tree)
+{
+	struct mount_info *m, *p;
+	LIST_HEAD(list);
+
+	/*
+	 * Put siblings of each node in an order they can be (u)mounted
+	 * I.e. if we have mounts on foo/bar/, foo/bar/foobar/ and foo/
+	 * we should put them in the foo/bar/foobar/, foo/bar/, foo/ order.
+	 * Otherwise we will not be able to (u)mount them in a sequence.
+	 *
+	 * Funny, but all we need for this is to sort them in the descending
+	 * order of the amount of /-s in a path =)
+	 *
+	 * Use stupid insertion sort here, we're not expecting mount trees
+	 * to contain hundreds (or more) elements.
+	 */
+
+	pr_info("\tResorting siblings v2 on %d\n", tree->mnt_id);
+	while (!list_empty(&tree->children)) {
+		m = list_first_entry(&tree->children, struct mount_info, siblings);
+		list_del(&m->siblings);
+
+		list_for_each_entry(p, &list, siblings)
+			if (strcmp(p->mountpoint, m->mountpoint) < 0)
+				break;
+
+		list_add_tail(&m->siblings, &p->siblings);
+		mnt_resort_siblings2(m);
+	}
+
+	list_splice(&list, &tree->children);
+}
