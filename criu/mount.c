@@ -3713,7 +3713,8 @@ static int ns_remount_writable(void *arg)
 		return 1;
 	pr_debug("Switched to mntns %u:%u/n", ns->id, ns->kid);
 
-	if (mount(NULL, mi->ns_mountpoint, NULL, MS_REMOUNT | MS_BIND, NULL) == -1) {
+	if (mount(NULL, mi->ns_mountpoint, NULL, MS_REMOUNT | MS_BIND |
+		  (mi->flags & ~(MS_PROPAGATE | MS_RDONLY)), NULL) == -1) {
 		pr_perror("Failed to remount %d:%s writable", mi->mnt_id, mi->mountpoint);
 		return 1;
 	}
@@ -3745,7 +3746,8 @@ int try_remount_writable(struct mount_info *mi, bool ns)
 
 		pr_info("Remount %d:%s writable\n", mi->mnt_id, mi->mountpoint);
 		if (!ns) {
-			if (mount(NULL, mi->mountpoint, NULL, MS_REMOUNT | MS_BIND, NULL) == -1) {
+			if (mount(NULL, mi->mountpoint, NULL, MS_REMOUNT | MS_BIND |
+				  (mi->flags & ~(MS_PROPAGATE | MS_RDONLY)), NULL) == -1) {
 				pr_perror("Failed to remount %d:%s writable", mi->mnt_id, mi->mountpoint);
 				return -1;
 			}
@@ -3785,7 +3787,7 @@ static int __remount_readonly_mounts(struct ns_id *ns)
 
 		pr_info("Remount %d:%s back to readonly\n", mi->mnt_id, mi->mountpoint);
 		if (mount(NULL, mi->ns_mountpoint, NULL,
-			  MS_REMOUNT | MS_BIND | (mi->flags & (~MS_PROPAGATE)),
+			  MS_REMOUNT | MS_BIND | (mi->flags & ~MS_PROPAGATE),
 			  NULL)) {
 			pr_perror("Failed to restore %d:%s mount flags %x",
 				  mi->mnt_id, mi->mountpoint, mi->flags);
