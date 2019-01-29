@@ -3850,6 +3850,7 @@ static int __check_mounts(struct ns_id *ns)
 {
 	struct ns_id _new_ns = { .ns_pid = PROC_SELF, .nd = &mnt_ns_desc }, *new_ns = &_new_ns;
 	struct mount_info *mnt, *new_mnt, *new;
+	int status, new_status;
 
 	if (do_restore_task_mnt_ns(ns))
 		return -1;
@@ -3861,29 +3862,36 @@ static int __check_mounts(struct ns_id *ns)
 
 
 	mnt = ns->mnt.mntinfo_tree;
+	/* Skip root_yard */
+	mnt = mnt_next(mnt, &status);
 	new_mnt = new_ns->mnt.mntinfo_tree;
 	mnt_resort_siblings2(mnt);
 	mnt_resort_siblings2(new_mnt);
 
 	while (mnt && new_mnt) {
-		int status, new_status;
+		if (strcmp(mnt->ns_mountpoint, new_mnt->ns_mountpoint+1)) {
+			pr_err("Mounts %s and %s does not match\n",
+			       mnt->ns_mountpoint, new_mnt->ns_mountpoint+1);
+			goto err;
+		}
+
 		mnt = mnt_next(mnt, &status);
 		new_mnt = mnt_next(new_mnt, &new_status);
 
 		if (status != new_status) {
 			pr_err("The restored mount tree for mntns %d:%d has wrong topology\n",
 			       ns->kid, ns->id);
-			return -1;
-		}
-
-		if (strcmp(mnt->mountpoint, new_mnt->mountpoint)) {
-			pr_err("Mounts %s and %s does not match\n",
-			       mnt->mountpoint, new_mnt->mountpoint);
-			return -1;
+			goto err;
 		}
 	}
 
 	return 0;
+err:
+	pr_err("Old tree:\n");
+	mnt_tree_show(ns->mnt.mntinfo_tree, 0);
+	pr_err("New tree:\n");
+	mnt_tree_show(new_ns->mnt.mntinfo_tree, 0);
+	return -1;
 }
 
 static int ns_check_mounts(void *arg)
@@ -3940,7 +3948,7 @@ static void mnt_resort_siblings2(struct mount_info *tree)
 				break;
 
 		list_add_tail(&m->siblings, &p->siblings);
-		mnt_resort_siblings(m);
+		mnt_resort_siblings2(m);
 	}
 
 	list_splice(&list, &tree->children);
