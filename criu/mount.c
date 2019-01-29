@@ -3136,7 +3136,7 @@ static int populate_roots_yard(void)
 
 static int populate_mnt_ns(void)
 {
-	struct mount_info *pms;
+	struct mount_info *pms, *c;
 	struct ns_id *nsid;
 	int ret;
 
@@ -3166,16 +3166,16 @@ static int populate_mnt_ns(void)
 	if (resolve_shared_mounts(mntinfo, pms->master_id))
 		return -1;
 
+	/* Initialize tries for all nses */
+	list_for_each_entry(c, &pms->children, siblings) {
+		c->nsid->mnt.mntinfo_tree = c;
+	}
+
 	for (nsid = ns_ids; nsid; nsid = nsid->next) {
 		if (nsid->nd != &mnt_ns_desc)
 			continue;
 
-		/*
-		 * Make trees of all namespaces look the
-		 * same, so that manual paths resolution
-		 * works on them.
-		 */
-		nsid->mnt.mntinfo_tree = pms;
+		BUG_ON(!nsid->mnt.mntinfo_tree);
 	}
 
 	if (validate_mounts(mntinfo, false))
