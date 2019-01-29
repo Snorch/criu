@@ -2882,7 +2882,7 @@ static int get_mp_mountpoint(char *mountpoint, struct mount_info *mi, char *root
 	return 0;
 }
 
-static int collect_mnt_from_image(struct mount_info **pms, struct ns_id *nsid)
+static int collect_mnt_from_image(struct mount_info **head, struct mount_info **tail, struct ns_id *nsid)
 {
 	MntEntry *me = NULL;
 	int ret, root_len = 1;
@@ -2910,8 +2910,10 @@ static int collect_mnt_from_image(struct mount_info **pms, struct ns_id *nsid)
 			goto err;
 
 		pm->nsid = nsid;
-		pm->next = *pms;
-		*pms = pm;
+		pm->next = *head;
+		*head = pm;
+		if (!*tail)
+			*tail = pm;
 
 		pm->mnt_id		= me->mnt_id;
 		pm->parent_mnt_id	= me->parent_mnt_id;
@@ -2996,11 +2998,20 @@ int read_mnt_ns_img(void)
 	}
 
 	for (nsid = ns_ids; nsid != NULL; nsid = nsid->next) {
+		struct mount_info *head = NULL, *tail = NULL;
+
 		if (nsid->nd != &mnt_ns_desc)
 			continue;
 
-		if (collect_mnt_from_image(&pms, nsid))
+		if (collect_mnt_from_image(&head, &tail, nsid))
 			return -1;
+
+		nsid->mnt.mntinfo_tree = mnt_build_tree(head, NULL);
+		if (!nsid->mnt.mntinfo_tree)
+			return -1;
+
+		tail->next = pms;
+		pms = head;
 	}
 
 	mntinfo = pms;
@@ -3141,7 +3152,6 @@ static int populate_roots_yard(void)
 
 static int populate_mnt_ns(void)
 {
-	struct mount_info *pms;
 	struct ns_id *nsid;
 	int ret;
 
@@ -3152,40 +3162,36 @@ static int populate_mnt_ns(void)
 	root_yard_mp->mountpoint = mnt_roots;
 	root_yard_mp->mounted = true;
 
-	pms = mnt_build_tree(mntinfo, root_yard_mp);
-	if (!pms)
-		return -1;
+	/* Merge mount trees together under root_yard */
+	for (nsid = ns_ids; nsid; nsid = nsid->next) {
+		struct mount_info *root;
+
+		if (nsid->nd != &mnt_ns_desc)
+			continue;
+
+		root = nsid->mnt.mntinfo_tree;
+		root->parent = root_yard_mp;
+		list_add_tail(&root->siblings, &root_yard_mp->children);
+	}
 
 #ifdef CONFIG_BINFMT_MISC_VIRTUALIZED
 	if (!opts.has_binfmt_misc && !list_empty(&binfmt_misc_list)) {
 		/* Add to mount tree. Generic code will mount it later */
-		ret = add_cr_time_mount(pms, "binfmt_misc", BINFMT_MISC_HOME, 0);
+		ret = add_cr_time_mount(root_yard_mp, "binfmt_misc", BINFMT_MISC_HOME, 0);
 		if (ret)
 			return -1;
 	}
 #endif
 
-	if (resolve_shared_mounts(mntinfo, pms->master_id))
+	if (resolve_shared_mounts(mntinfo, 0))
 		return -1;
-
-	for (nsid = ns_ids; nsid; nsid = nsid->next) {
-		if (nsid->nd != &mnt_ns_desc)
-			continue;
-
-		/*
-		 * Make trees of all namespaces look the
-		 * same, so that manual paths resolution
-		 * works on them.
-		 */
-		nsid->mnt.mntinfo_tree = pms;
-	}
 
 	if (validate_mounts(mntinfo, false))
 		return -1;
 
-	mnt_tree_for_each(pms, set_is_overmounted);
+	mnt_tree_for_each(root_yard_mp, set_is_overmounted);
 
-	if (find_remap_mounts(pms))
+	if (find_remap_mounts(root_yard_mp))
 		return -1;
 
 	if (populate_roots_yard())
@@ -3194,8 +3200,8 @@ static int populate_mnt_ns(void)
 	if (mount_clean_path())
 		return -1;
 
-	ret = mnt_tree_for_each(pms, do_mount_one);
-	mnt_tree_for_each(pms, do_close_one);
+	ret = mnt_tree_for_each(root_yard_mp, do_mount_one);
+	mnt_tree_for_each(root_yard_mp, do_close_one);
 
 	if (ret == 0 && fixup_remap_mounts())
 		return -1;
