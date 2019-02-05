@@ -330,7 +330,7 @@ static bool mounts_equal(struct mount_info *a, struct mount_info *b)
  */
 static char *mnt_roots;
 
-static struct mount_info *mnt_build_ids_tree(struct mount_info *list, struct mount_info *yard_mount)
+static struct mount_info *mnt_build_ids_tree(struct mount_info *list)
 {
 	struct mount_info *m, *root = NULL;
 
@@ -351,41 +351,14 @@ static struct mount_info *mnt_build_ids_tree(struct mount_info *list, struct mou
 
 		if (!parent) {
 			/* Only a root mount can be without parent */
-			if (root == NULL && m->is_ns_root) {
+			if (!root && m->is_ns_root) {
 				root = m;
-				if (!yard_mount)
-					continue;
+				continue;
 			}
 
-			if (!root) {
-				pr_err("No parent found for mountpoint %d (@%s)\n",
-					m->mnt_id, m->mountpoint);
-				return NULL;
-			}
-
-			pr_debug("Mountpoint %d (@%s) w/o parent %d\n",
-				 m->mnt_id, m->mountpoint, m->parent_mnt_id);
-
-			if (!mounts_sb_equal(root, m) ||
-			    strcmp(root->root, m->root)) {
-				pr_err("Nested mount namespaces with different "
-				       "roots %d (@%s %s) %d (@%s %s) are not supported yet\n",
-				       root->mnt_id, root->mountpoint, root->root,
-				       m->mnt_id, m->mountpoint, m->root);
-				return NULL;
-			}
-
-			/* Mount all namespace roots into the roots yard. */
-			parent = yard_mount;
-			if (unlikely(!yard_mount)) {
-				pr_err("Nested mount %d (@%s %s) w/o root insertion detected\n",
-				       m->mnt_id, m->mountpoint, m->root);
-				return NULL;
-			}
-
-			pr_debug("Mountpoint %d (@%s) get parent %d (@%s)\n",
-				 m->mnt_id, m->mountpoint,
-				 parent->mnt_id, parent->mountpoint);
+			pr_err("No parent found for mountpoint %d (@%s)\n",
+				m->mnt_id, m->mountpoint);
+			return NULL;
 		}
 
 		m->parent = parent;
@@ -396,9 +369,6 @@ static struct mount_info *mnt_build_ids_tree(struct mount_info *list, struct mou
 		pr_err("No root found for tree\n");
 		return NULL;
 	}
-
-	if (yard_mount)
-		return yard_mount;
 
 	return root;
 }
@@ -998,8 +968,7 @@ static int resolve_shared_mounts(struct mount_info *info, int root_master_id)
 	return 0;
 }
 
-static struct mount_info *mnt_build_tree(struct mount_info *list,
-					 struct mount_info *root_mp)
+static struct mount_info *mnt_build_tree(struct mount_info *list)
 {
 	struct mount_info *tree;
 
@@ -1008,7 +977,7 @@ static struct mount_info *mnt_build_tree(struct mount_info *list,
 	 */
 
 	pr_info("Building mountpoints tree\n");
-	tree = mnt_build_ids_tree(list, root_mp);
+	tree = mnt_build_ids_tree(list);
 	if (!tree)
 		return NULL;
 
@@ -1691,7 +1660,7 @@ struct mount_info *collect_mntinfo(struct ns_id *ns, bool for_dump)
 		return NULL;
 	}
 
-	ns->mnt.mntinfo_tree = mnt_build_tree(pm, NULL);
+	ns->mnt.mntinfo_tree = mnt_build_tree(pm);
 	if (ns->mnt.mntinfo_tree == NULL)
 		goto err;
 
@@ -3006,7 +2975,7 @@ int read_mnt_ns_img(void)
 		if (collect_mnt_from_image(&head, &tail, nsid))
 			return -1;
 
-		nsid->mnt.mntinfo_tree = mnt_build_tree(head, NULL);
+		nsid->mnt.mntinfo_tree = mnt_build_tree(head);
 		if (!nsid->mnt.mntinfo_tree)
 			return -1;
 
@@ -3150,17 +3119,10 @@ static int populate_roots_yard(void)
 	return 0;
 }
 
-static int populate_mnt_ns(void)
+static int merge_mount_trees(struct mount_info *root_yard)
 {
+	struct mount_info *prev = NULL;
 	struct ns_id *nsid;
-	int ret;
-
-	root_yard_mp = mnt_entry_alloc();
-	if (!root_yard_mp)
-		return -1;
-
-	root_yard_mp->mountpoint = mnt_roots;
-	root_yard_mp->mounted = true;
 
 	/* Merge mount trees together under root_yard */
 	for (nsid = ns_ids; nsid; nsid = nsid->next) {
@@ -3170,9 +3132,40 @@ static int populate_mnt_ns(void)
 			continue;
 
 		root = nsid->mnt.mntinfo_tree;
-		root->parent = root_yard_mp;
-		list_add_tail(&root->siblings, &root_yard_mp->children);
+
+		if (!prev)
+			prev = root;
+		else if (!mounts_sb_equal(root, prev) ||
+			 strcmp(root->root, prev->root)) {
+			pr_err("Nested mount namespaces with different "
+			       "roots %d (@%s %s) %d (@%s %s) are not supported yet\n",
+			       root->mnt_id, root->mountpoint, root->root,
+			       prev->mnt_id, prev->mountpoint, prev->root);
+			return NULL;
+		}
+
+		pr_debug("Mountpoint %d (@%s) moved to the root yard\n",
+			 root->mnt_id, root->mountpoint);
+		root->parent = root_yard;
+		list_add_tail(&root->siblings, &root_yard->children);
 	}
+
+	return root_yard;
+}
+
+static int populate_mnt_ns(void)
+{
+	int ret;
+
+	root_yard_mp = mnt_entry_alloc();
+	if (!root_yard_mp)
+		return -1;
+
+	root_yard_mp->mountpoint = mnt_roots;
+	root_yard_mp->mounted = true;
+
+	if (!merge_mount_trees(root_yard_mp))
+		return -1;
 
 #ifdef CONFIG_BINFMT_MISC_VIRTUALIZED
 	if (!opts.has_binfmt_misc && !list_empty(&binfmt_misc_list)) {
