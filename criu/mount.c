@@ -3141,7 +3141,7 @@ static int merge_mount_trees(struct mount_info *root_yard)
 			       "roots %d (@%s %s) %d (@%s %s) are not supported yet\n",
 			       root->mnt_id, root->mountpoint, root->root,
 			       prev->mnt_id, prev->mountpoint, prev->root);
-			return NULL;
+			return -1;
 		}
 
 		pr_debug("Mountpoint %d (@%s) moved to the root yard\n",
@@ -3150,7 +3150,7 @@ static int merge_mount_trees(struct mount_info *root_yard)
 		list_add_tail(&root->siblings, &root_yard->children);
 	}
 
-	return root_yard;
+	return 0;
 }
 
 static int populate_mnt_ns(void)
@@ -3164,7 +3164,7 @@ static int populate_mnt_ns(void)
 	root_yard_mp->mountpoint = mnt_roots;
 	root_yard_mp->mounted = true;
 
-	if (!merge_mount_trees(root_yard_mp))
+	if (merge_mount_trees(root_yard_mp))
 		return -1;
 
 #ifdef CONFIG_BINFMT_MISC_VIRTUALIZED
