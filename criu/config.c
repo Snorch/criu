@@ -511,6 +511,7 @@ int parse_options(int argc, char **argv, bool *usage_error,
 		BOOL_OPT("remote", &opts.remote),
 		{ "config",			required_argument,	0, 1089},
 		{ "no-default-config",		no_argument,		0, 1090},
+		BOOL_OPT("check-mounts", &opts.check_mounts),
 		{ },
 	};
 
