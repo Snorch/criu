@@ -145,6 +145,7 @@ struct cr_options {
 	char			*tls_key;
 	int			tls;
 	int			tls_no_cn_verify;
+	int			check_mounts;
 };
 
 extern struct cr_options opts;

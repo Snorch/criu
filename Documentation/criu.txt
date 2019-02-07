@@ -516,6 +516,12 @@ are not adequate, but this can be suppressed by using *--cpu-cap=none*.
    restored process.
    This option requires running *lazy-pages* daemon.
 
+*--check-mounts*::
+   Additional sanity check for mount tree restore. These checks that restored
+   mount tree is identical to what we have in images. These can be used to
+   debug problems with mounts and as an additional protection from corrupting
+   the mount tree.
+
 *check*
 ~~~~~~~
 Checks whether the kernel supports the features needed by *criu* to
