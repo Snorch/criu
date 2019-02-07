@@ -927,6 +927,9 @@ class criu_rpc:
                 inhfd.fd = int(fd[3:-1])
                 inhfd.key = key
                 continue
+            if arg == "--check-mounts":
+                criu.opts.check_mounts = True
+                continue
 
             raise test_fail_exc('RPC for %s required' % arg)
 
@@ -1344,6 +1347,8 @@ class criu:
                                                   opts=lp_opts,
                                                   nowait=True)
             r_opts += ["--lazy-pages"]
+
+        r_opts += ['--check-mounts']
 
         if self.__leave_stopped:
             r_opts += ['--leave-stopped']
