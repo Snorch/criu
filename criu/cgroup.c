@@ -1092,6 +1092,27 @@ static int userns_move(void *arg, int fd, pid_t pid)
 		close(fd);
 	}
 
+	if (fd < 0) {
+		pr_err("DEBUG: cg=%d\n arg=%s", cg, (char *)arg);
+		while (1) {
+			char *c;
+
+			c = strrchr(arg, '/');
+			if (!c)
+				break;
+			c[0] = '\0';
+
+			fd = openat(cg, arg, O_PATH);
+			if (fd < 0) {
+				pr_perror("DEBUG: can't open %s\n", (char *)arg);
+			} else {
+				pr_err("DEBUG: opened %s\n", (char *)arg);
+				close(fd);
+				break;
+			}
+		}
+	}
+
 	if (err < 0) {
 		pr_perror("Can't move %s into %s (%d/%d)", pidbuf, (char *)arg, err, fd);
 		return -1;
