@@ -177,6 +177,9 @@ struct task_restore_args {
 	pid_t				*zombies;
 	unsigned int			zombies_n;
 
+	int				*inotify_fds;
+	unsigned int			inotify_fds_n;
+
 	/* * * * * * * * * * * * * * * * * * * * */
 
 	unsigned long			task_size;
