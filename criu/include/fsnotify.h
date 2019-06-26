@@ -20,5 +20,6 @@ extern struct collect_image_info inotify_cinfo;
 extern struct collect_image_info inotify_mark_cinfo;
 extern struct collect_image_info fanotify_cinfo;
 extern struct collect_image_info fanotify_mark_cinfo;
+extern int cleanup_current_inotify_events(void);
 
 #endif /* __CR_FSNOTIFY_H__ */

@@ -859,6 +859,9 @@ static int restore_one_alive_task(int pid, CoreEntry *core)
 			return -1;
 	}
 
+	if (cleanup_current_inotify_events())
+		return -1;
+
 	if (prepare_file_locks(pid))
 		return -1;
 
@@ -1022,6 +1025,9 @@ static int restore_one_zombie(CoreEntry *core)
 		return -1;
 
 	if (restore_finish_stage(task_entries, CR_STATE_FDS) < 0)
+		return -1;
+
+	if (cleanup_current_inotify_events())
 		return -1;
 
 	if (lazy_pages_setup_zombie(vpid(current)))
@@ -1208,6 +1214,9 @@ static int restore_one_helper(void)
 		return -1;
 
 	if (restore_finish_stage(task_entries, CR_STATE_FDS) < 0)
+		return -1;
+
+	if (cleanup_current_inotify_events())
 		return -1;
 
 	if (wait_exiting_children())

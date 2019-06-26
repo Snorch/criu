@@ -605,6 +605,80 @@ err:
 	return ret;
 }
 
+/*
+ * note: Actually kernel may want even more space for one event (see
+ * round_event_name_len), so using buffer of EVENT_BUFF_SIZE size may fail.
+ * To be on the safe side - take a bigger buffer, and these also allows to
+ * read more events in one syscall.
+ */
+#define EVENT_BUFF_SIZE ((sizeof(struct inotify_event) + PATH_MAX))
+
+/*
+ * Read all available events from inotify queue
+ */
+static int cleanup_inotify_events(int inotify_fd)
+{
+	char buf[EVENT_BUFF_SIZE * 8];
+	int ret;
+
+	while (1) {
+		ret = fd_has_data(inotify_fd);
+		if (ret < 0)
+			return -1;
+		else if (ret == 0)
+			break;
+
+		ret = read(inotify_fd, buf, sizeof(buf));
+		if (ret < 0) {
+			pr_perror("Failed to read inotify events\n");
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+static struct file_desc_ops inotify_desc_ops;
+
+/*
+ * When we restore inotifies we can open and close files we create a watch
+ * for. So wee need to cleanup these auxiliary events which we've generated.
+ */
+int cleanup_current_inotify_events(void)
+{
+	struct list_head *list = &rsti(current)->fds;
+	struct fdt *fdt = rsti(current)->fdt;
+	struct fdinfo_list_entry *fle;
+
+	/* When fdt is shared it is enough to cleanup from fdt-restorer only */
+	if (fdt && fdt->pid != vpid(current))
+		return 0;
+
+	list_for_each_entry(fle, list, ps_list) {
+		struct file_desc *d = fle->desc;
+		int inotify_fd = fle->fe->fd;
+
+		/*
+		 * All tasks finished CR_STATE_FDS stage at these point, thus
+		 * all except fdt-receivers should have all fds open here.
+		 */
+		BUG_ON(fle->stage != FLE_RESTORED);
+
+		if (d->ops != &inotify_desc_ops)
+			continue;
+
+		if (fle != file_master(d))
+			continue;
+
+		pr_debug("Cleaning inotify events from %d\n", inotify_fd);
+
+		if (cleanup_inotify_events(inotify_fd))
+			return -1;
+	}
+
+	return 0;
+}
+
 static int restore_one_fanotify(int fd, struct fsnotify_mark_info *mark)
 {
 	FanotifyMarkEntry *fme = mark->fme;
