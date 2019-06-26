@@ -16,6 +16,7 @@
 #include <sched.h>
 #include <sys/resource.h>
 #include <signal.h>
+#include <sys/inotify.h>
 
 #include "linux/userfaultfd.h"
 
@@ -1232,6 +1233,62 @@ static bool vdso_needs_parking(struct task_restore_args *args)
 }
 
 /*
+ * note: Actually kernel may want even more space for one event (see
+ * round_event_name_len), so using buffer of EVENT_BUFF_SIZE size may fail.
+ * To be on the safe side - take a bigger buffer, and these also allows to
+ * read more events in one syscall.
+ */
+#define EVENT_BUFF_SIZE ((sizeof(struct inotify_event) + PATH_MAX))
+
+/*
+ * Read all available events from inotify queue
+ */
+static int cleanup_inotify_events(int inotify_fd)
+{
+	struct pollfd pfd = {inotify_fd, POLLIN, 0};
+	char buf[EVENT_BUFF_SIZE * 8];
+	int ret;
+
+	while (1) {
+		ret = sys_poll(&pfd, 1, 0);
+		if (ret < 0) {
+			pr_err("Failed to poll from inotify fd\n");
+			return -1;
+		} else if (ret == 0) {
+			break;
+		}
+
+		ret = sys_read(inotify_fd, buf, sizeof(buf));
+		if (ret < 0) {
+			pr_err("Failed to read inotify events\n");
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+/*
+ * When we restore inotifies we can open and close files we create a watch
+ * for. So wee need to cleanup these auxiliary events which we've generated.
+ */
+int cleanup_current_inotify_events(struct task_restore_args *task_args)
+{
+	int i;
+
+	for (i = 0; i < task_args->inotify_fds_n; i++) {
+		int inotify_fd = task_args->inotify_fds[i];
+
+		pr_debug("Cleaning inotify events from %d\n", inotify_fd);
+
+		if (cleanup_inotify_events(inotify_fd))
+			return -1;
+	}
+
+	return 0;
+}
+
+/*
  * The main routine to restore task via sigreturn.
  * This one is very special, we never return there
  * but use sigreturn facility to restore core registers
@@ -1671,6 +1728,9 @@ long __export_restore_task(struct task_restore_args *args)
 	pr_info("%ld: Restored\n", sys_getpid());
 
 	restore_finish_stage(task_entries_local, CR_STATE_RESTORE);
+
+	if (cleanup_current_inotify_events(args))
+		goto core_restore_end;
 
 	if (wait_helpers(args) < 0)
 		goto core_restore_end;
