@@ -87,11 +87,13 @@ int dedup_one_iovec(struct page_read *pr, unsigned long off, unsigned long len)
 
 		ret = pr->seek_pagemap(pr, off);
 		if (ret == 0) {
-			pr_warn("Missing %lx in parent pagemap\n", off);
-			if (off < pr->cvaddr && pr->cvaddr < iov_end)
+			if (off < pr->cvaddr && pr->cvaddr < iov_end) {
+				pr_debug("No range %lx-%lx in pagemap\n", off, pr->cvaddr);
 				off = pr->cvaddr;
-			else
+			} else {
+				pr_debug("No range %lx-%lx in pagemap\n", off, iov_end);
 				return 0;
+			}
 		}
 
 		if (!pr->pe)
