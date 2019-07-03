@@ -264,7 +264,7 @@ enum {
 	 * finish it, but by the time it gets woken up the stage
 	 * finished is CR_STATE_RESTORE. The forking stage is
 	 * barrier-ed by the root task, this task is also the one
-	 * that switches the stage (into restoring).
+	 * that switches the stage (into fds).
 	 *
 	 * The above is done to lower the amount of context
 	 * switches from root task to criu and back, since the
@@ -272,6 +272,13 @@ enum {
 	 * purely to make sure all tasks be in sync.
 	 */
 	CR_STATE_FORKING,
+	/*
+	 * All tasks oppened all their fds. Stage is needed for inotify events
+	 * cleanup. These is also a special stage like CR_STATE_FORKING and is
+	 * barriered by the root task, this task also switches the stage (into
+	 * restoring).
+	 */
+	CR_STATE_FDS,
 	/*
 	 * Main restore stage. By the end of it all tasks are
 	 * almost ready and what's left is:

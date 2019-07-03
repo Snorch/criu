@@ -134,6 +134,7 @@ static inline int stage_participants(int next_stage)
 	case CR_STATE_PREPARE_NAMESPACES:
 		return 1;
 	case CR_STATE_FORKING:
+	case CR_STATE_FDS:
 		return task_entries->nr_tasks + task_entries->nr_helpers;
 	case CR_STATE_RESTORE:
 		return task_entries->nr_threads + task_entries->nr_helpers;
@@ -150,6 +151,7 @@ static inline int stage_current_participants(int next_stage)
 {
 	switch (next_stage) {
 	case CR_STATE_FORKING:
+	case CR_STATE_FDS:
 		return 1;
 	case CR_STATE_RESTORE:
 		/*
@@ -848,6 +850,15 @@ static int restore_one_alive_task(int pid, CoreEntry *core)
 	if (prepare_fds(current))
 		return -1;
 
+	if (current->parent == NULL) {
+		if (restore_wait_other_tasks())
+			return -1;
+		__restore_switch_stage(CR_STATE_RESTORE);
+	} else {
+		if (restore_finish_stage(task_entries, CR_STATE_FDS) < 0)
+			return -1;
+	}
+
 	if (prepare_file_locks(pid))
 		return -1;
 
@@ -1008,6 +1019,9 @@ static int restore_one_zombie(CoreEntry *core)
 	pr_info("Restoring zombie with %d code\n", exit_code);
 
 	if (prepare_fds(current))
+		return -1;
+
+	if (restore_finish_stage(task_entries, CR_STATE_FDS) < 0)
 		return -1;
 
 	if (lazy_pages_setup_zombie(vpid(current)))
@@ -1191,6 +1205,9 @@ static int restore_one_helper(void)
 	int i;
 
 	if (prepare_fds(current))
+		return -1;
+
+	if (restore_finish_stage(task_entries, CR_STATE_FDS) < 0)
 		return -1;
 
 	if (wait_exiting_children())
@@ -1774,7 +1791,7 @@ static int restore_task_with_children(void *_arg)
 		if (restore_wait_other_tasks())
 			goto err;
 		fini_restore_mntns();
-		__restore_switch_stage(CR_STATE_RESTORE);
+		__restore_switch_stage(CR_STATE_FDS);
 	} else {
 		if (restore_finish_stage(task_entries, CR_STATE_FORKING) < 0)
 			goto err;
