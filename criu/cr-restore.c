@@ -670,6 +670,24 @@ static int prepare_sigactions(CoreEntry *core)
 	return ret;
 }
 
+static int restore_child_subreaper(CoreEntry *core) {
+	int ret;
+
+	if (!task_alive(current))
+		return 0;
+
+	if (!core->tc->has_child_subreaper) {
+		pr_warn("Child subreaper flag not present in criu dump.\n");
+		return 0;
+	}
+
+	ret = prctl(PR_SET_CHILD_SUBREAPER, core->tc->child_subreaper, 0, 0, 0);
+	if (ret) {
+		pr_err("Unable to execute PR_SET_CHILD_SUBREAPER: %d\n", ret);
+	}
+	return ret;
+}
+
 static int __collect_child_pids(struct pstree_item *p, int state, unsigned int *n)
 {
 	struct pstree_item *pi;
@@ -1735,6 +1753,9 @@ static int restore_task_with_children(void *_arg)
 		goto err;
 
 	if (prepare_sigactions(ca->core) < 0)
+		goto err;
+
+	if (restore_child_subreaper(ca->core) < 0)
 		goto err;
 
 	if (fault_injected(FI_RESTORE_ROOT_ONLY)) {
