@@ -214,6 +214,7 @@ TST_NOFILE	:=				\
 		selinux00			\
 		selinux01			\
 		selinux02			\
+		child_subreaper			\
 #		jobctl00			\
 
 ifneq ($(SRCARCH),arm)
