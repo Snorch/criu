@@ -1247,13 +1247,9 @@ static inline int restore_child_subreaper(int child_subreaper)
 static int fd_poll(int inotify_fd)
 {
 	struct pollfd pfd = {inotify_fd, POLLIN, 0};
-#ifdef SYS_poll
-	return sys_poll(&pfd, 1, 0);
-#else
 	struct timespec tmo = {0, 0};
 
 	return sys_ppoll(&pfd, 1, &tmo, NULL, sizeof(sigset_t));
-#endif
 }
 
 /*
