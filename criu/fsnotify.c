@@ -123,7 +123,7 @@ static char *alloc_openable(unsigned int s_dev, unsigned long i_ino, FhEntry *f_
 	 */
 	for (m = mntinfo; m; m = m->next) {
 		char buf[PATH_MAX], *__path;
-		int mntfd, openable_fd;
+		int mntfd;
 		struct stat st;
 
 		if (m->s_dev != s_dev)
@@ -159,31 +159,25 @@ static char *alloc_openable(unsigned int s_dev, unsigned long i_ino, FhEntry *f_
 		if (mntfd < 0)
 			goto err;
 
-		openable_fd = openat(mntfd, __path, O_PATH);
-		if (openable_fd >= 0) {
-			if (fstat(openable_fd, &st)) {
-				pr_perror("Can't stat on %s", __path);
-				close(openable_fd);
-				return ERR_PTR(-errno);
-			}
-			close(openable_fd);
+		if (fstatat(mntfd, __path, &st, O_PATH)) {
+			pr_perror("Can't fstatat on %s", __path);
+			return ERR_PTR(-errno);
+		}
 
-			pr_debug("\t\t\topenable (inode %s) as %s\n",
-				 st.st_ino == i_ino ?
-				 "match" : "don't match", __path);
+		pr_debug("\t\t\tfstatat on (inode %s) as %s\n",
+			 st.st_ino == i_ino ?
+			 "match" : "don't match", __path);
 
-			if (st.st_ino == i_ino) {
-				path = xstrdup(buf);
-				if (path == NULL)
-					return ERR_PTR(-ENOMEM);
-				if (root_ns_mask & CLONE_NEWNS) {
-					f_handle->has_mnt_id = true;
-					f_handle->mnt_id = m->mnt_id;
-				}
-				return path;
+		if (st.st_ino == i_ino) {
+			path = xstrdup(buf);
+			if (path == NULL)
+				return ERR_PTR(-ENOMEM);
+			if (root_ns_mask & CLONE_NEWNS) {
+				f_handle->has_mnt_id = true;
+				f_handle->mnt_id = m->mnt_id;
 			}
-		} else
-			pr_debug("\t\t\tnot openable as %s (%m)\n", __path);
+			return path;
+		}
 	}
 
 	return ERR_PTR(-ENOENT);
