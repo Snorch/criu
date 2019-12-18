@@ -546,40 +546,34 @@ static bool mnt_needs_remap(struct mount_info *m)
 	return false;
 }
 
-/*
- * Say mount is external if it was explicitly specified as an
- * external or it will be bind from such an explicit external
- * mount, we set bind in propagate_mount and propagate_siblings
- */
-
-static bool mnt_is_external(struct mount_info *m)
+static bool __mnt_is_external_bind(struct mount_info *mi, struct mount_info *bind)
 {
-	struct mount_info *t;
+	if (bind->external && is_sub_path(mi->root, bind->root))
+		return true;
 
-	while (m) {
-		if (m->external)
-			return 1;
+	return false;
+}
 
-		if (!list_empty(&m->mnt_share))
-			list_for_each_entry(t, &m->mnt_share, mnt_share)
-				if (t->external)
-					return 1;
+/*
+ * Say mount is external if it was explicitly specified as an external or it
+ * can be bind-mounted from such an explicit external mount.
+ */
+static bool mnt_is_external_bind(struct mount_info *mi)
+{
+	return mnt_bind_pick(mi, __mnt_is_external_bind);
+}
 
-		/*
-		 * Shouldn't use mnt_bind list before it was setup in
-		 * __search_bindmounts
-		 */
-		BUG_ON(list_empty(&m->mnt_bind) && !m->mnt_no_bind);
+static bool __can_receive_master_from_external(struct mount_info *mi, struct mount_info *bind)
+{
+	if (bind->external && bind->master_id == mi->master_id && is_sub_path(mi->root, bind->root))
+		return true;
 
-		if (m->master_id <= 0 && !list_empty(&m->mnt_bind))
-			list_for_each_entry(t, &m->mnt_bind, mnt_bind)
-				if (issubpath(m->root, t->root) && t->external)
-					return 1;
+	return false;
+}
 
-		m = m->mnt_master;
-	}
-
-	return 0;
+static bool can_receive_master_from_external(struct mount_info *mi)
+{
+	return mnt_bind_pick(mi, __can_receive_master_from_external);
 }
 
 /*
@@ -622,7 +616,7 @@ static int validate_mounts(struct mount_info *info, bool for_dump)
 		if (validate_children_collision(m))
 			return -1;
 
-		if (mnt_is_external(m))
+		if (mnt_is_external_bind(m))
 			continue;
 
 		/*
@@ -991,7 +985,7 @@ static int resolve_shared_mounts(struct mount_info *info, int root_master_id)
 		 * If we haven't already determined this mount is external,
 		 * or bind of external, then we don't know where it came from.
 		 */
-		if (need_master && m->parent && !mnt_is_external(m)) {
+		if (need_master && m->parent && !can_receive_master_from_external(m)) {
 			pr_err("Mount %d %s (master_id: %d shared_id: %d) "
 			       "has unreachable sharing. Try --enable-external-masters.\n",
 			       m->mnt_id, m->mountpoint, m->master_id, m->shared_id);
@@ -1586,7 +1580,7 @@ static int dump_one_fs(struct mount_info *mi)
 	struct mount_info *t;
 	bool first = true;
 
-	if (mi->is_ns_root || mi->need_plugin || mnt_is_external(mi) || !mi->fstype->dump)
+	if (mi->is_ns_root || mi->need_plugin || mnt_is_external_bind(mi) || !mi->fstype->dump)
 		return 0;
 
 	/* mnt_bind is a cycled list, so list_for_each can't be used here. */
@@ -2870,7 +2864,7 @@ static int get_mp_root(MntEntry *me, struct mount_info *mi)
 		me->ext_key = me->root;
 		/*
 		 * Putting the id of external mount which is provided by user,
-		 * to ->root can confuse mnt_is_external and other functions
+		 * to ->root can confuse mnt_is_external_bind and other functions
 		 * which expect to see the path in the file system to the root
 		 * of these mount (mounts_equal, mnt_build_ids_tree,
 		 * find_fsroot_mount_for, find_best_external_match, etc.)
