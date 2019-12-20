@@ -565,6 +565,12 @@ static bool mnt_is_external(struct mount_info *m)
 				if (t->external)
 					return 1;
 
+		/*
+		 * Shouldn't use mnt_bind list before it was setup in
+		 * __search_bindmounts
+		 */
+		BUG_ON(list_empty(&m->mnt_bind) && !m->mnt_no_bind);
+
 		if (m->master_id <= 0 && !list_empty(&m->mnt_bind))
 			list_for_each_entry(t, &m->mnt_bind, mnt_bind)
 				if (issubpath(m->root, t->root) && t->external)
@@ -886,6 +892,37 @@ static int same_propagation_group(struct mount_info *a, struct mount_info *b)
 	return 0;
 }
 
+/*
+ * Only valid if called consequently on all mounts in mntinfo list
+ */
+static void __search_bindmounts(struct mount_info *m)
+{
+	struct mount_info *t;
+
+	/* m is already processed */
+	if (!list_empty(&m->mnt_bind) || m->mnt_no_bind)
+		return;
+
+	for (t = m->next; t; t = t->next) {
+		if (mounts_sb_equal(m, t)) {
+			list_add(&t->mnt_bind, &m->mnt_bind);
+			pr_debug("\tThe mount %3d is bind for %3d (@%s -> @%s)\n", t->mnt_id, m->mnt_id, t->mountpoint,
+				 m->mountpoint);
+		}
+	}
+
+	if (list_empty(&m->mnt_bind))
+		m->mnt_no_bind = true;
+}
+
+static void search_bindmounts(void)
+{
+	struct mount_info *mi;
+
+	for (mi = mntinfo; mi; mi = mi->next)
+		__search_bindmounts(mi);
+}
+
 static int resolve_shared_mounts(struct mount_info *info, int root_master_id)
 {
 	struct mount_info *m, *t;
@@ -937,21 +974,6 @@ static int resolve_shared_mounts(struct mount_info *info, int root_master_id)
 			       "has unreachable sharing. Try --enable-external-masters.\n",
 			       m->mnt_id, m->mountpoint, m->master_id, m->shared_id);
 			return -1;
-		}
-
-		/* Search bind-mounts */
-		if (list_empty(&m->mnt_bind)) {
-			/*
-			 * A first mounted point will be set up as a source point
-			 * for others. Look at propagate_mount()
-			 */
-			for (t = m->next; t; t = t->next) {
-				if (mounts_sb_equal(m, t)) {
-					list_add(&t->mnt_bind, &m->mnt_bind);
-					pr_debug("\tThe mount %3d is bind for %3d (@%s -> @%s)\n", t->mnt_id, m->mnt_id,
-						 t->mountpoint, m->mountpoint);
-				}
-			}
 		}
 	}
 
@@ -1488,6 +1510,7 @@ static __maybe_unused int add_cr_time_mount(struct mount_info *root, char *fsnam
 			break;
 	}
 
+	mi->mnt_no_bind = true;
 	mi->nsid = parent->nsid;
 	mi->parent = parent;
 	mi->parent_mnt_id = parent->mnt_id;
@@ -3092,6 +3115,9 @@ int read_mnt_ns_img(void)
 	}
 
 	mntinfo = pms;
+
+	search_bindmounts();
+
 	return 0;
 }
 
@@ -3269,6 +3295,7 @@ static int populate_mnt_ns(void)
 
 	root_yard_mp->mountpoint = mnt_roots;
 	root_yard_mp->mounted = true;
+	root_yard_mp->mnt_no_bind = true;
 
 	if (merge_mount_trees(root_yard_mp))
 		return -1;
@@ -3704,6 +3731,8 @@ int collect_mnt_namespaces(bool for_dump)
 	ret = walk_namespaces(&mnt_ns_desc, collect_mntns, &arg);
 	if (ret)
 		goto err;
+
+	search_bindmounts();
 
 #ifdef CONFIG_BINFMT_MISC_VIRTUALIZED
 	if (for_dump && !opts.has_binfmt_misc) {
