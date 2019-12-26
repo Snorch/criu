@@ -969,7 +969,12 @@ static int resolve_shared_mounts(struct mount_info *info, int root_master_id)
 		 * If we haven't already determined this mount is external,
 		 * or bind of external, then we don't know where it came from.
 		 */
-		if (need_master && m->parent && !can_receive_master_from_external(m)) {
+		if (need_master && m->parent) {
+			if (can_receive_master_from_external(m)) {
+				m->external_slavery = true;
+				continue;
+			}
+
 			pr_err("Mount %d %s (master_id: %d shared_id: %d) "
 			       "has unreachable sharing. Try --enable-external-masters.\n", m->mnt_id,
 				m->mountpoint, m->master_id, m->shared_id);
@@ -2230,7 +2235,8 @@ static int do_bind_mount(struct mount_info *mi)
 		 * to proper location in the namespace we restore.
 		 */
 		root = mi->external;
-		private = !mi->master_id && (mi->internal_sharing || !mi->shared_id);
+		private = (!mi->external_slavery || !mi->master_id) &&
+			  (mi->internal_sharing || !mi->shared_id);
 		goto do_bind;
 	}
 
