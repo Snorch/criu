@@ -361,6 +361,7 @@ TST_DIR		=				\
 		overmounted_file		\
 		symlink				\
 		symlink01			\
+		opath_file			\
 
 TST_DIR_FILE	=				\
 		chroot				\
