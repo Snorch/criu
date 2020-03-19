@@ -82,6 +82,7 @@
 #include "eventpoll.h"
 #include "img-remote.h"
 #include "memfd.h"
+#include "sigaction.h"
 
 /*
  * Architectures can overwrite this function to restore register sets that
