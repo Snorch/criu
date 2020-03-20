@@ -78,7 +78,6 @@
 #include "memfd.h"
 #include "string.h"
 
-#include "include/parasite-syscall.h"
 #include "parasite-syscall.h"
 #include "files-reg.h"
 #include <compel/plugins/std/syscall-codes.h>

@@ -8,7 +8,6 @@
 #include "common/config.h"
 #include "common/compiler.h"
 #include "types.h"
-#include "sigaction.h"
 #include "protobuf.h"
 #include "images/sa.pb-c.h"
 #include "images/timer.pb-c.h"

@@ -20,7 +20,6 @@
 #include "criu-log.h"
 #include "tty.h"
 #include "aio.h"
-#include <compel/plugins/std/syscall-types.h>
 
 #include "asm/parasite.h"
 #include "restorer.h"

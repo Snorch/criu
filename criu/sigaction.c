@@ -1,22 +1,9 @@
-#include <unistd.h>
-#include <inttypes.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <sys/mman.h>
 #include "parasite.h"
-#include "parasite-syscall.h"
-#include "pstree.h"
-#include "sigframe.h"
-#include "image.h"
-#include "img-remote.h"
-#include "images/core.pb-c.h"
-#include "images/sa.pb-c.h"
 #include "infect.h"
 #include "protobuf.h"
-#include "restore.h"
 #include "restorer.h"
+#include "pstree.h"
 #include "sigaction.h"
-#include "pie/pie-relocs.h"
 
 int parasite_dump_sigacts_seized(struct parasite_ctl *ctl, struct pstree_item *item)
 {
