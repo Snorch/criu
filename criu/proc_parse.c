@@ -1642,10 +1642,8 @@ struct mount_info *parse_mountinfo(pid_t pid, struct ns_id *nsid, bool for_dump)
 		if (fsname)
 			free(fsname);
 
-		if (new) {
-			new->next = list;
-			list = new;
-		}
+		if (new)
+			mntinfo_add_list_before(&list, new);
 
 		if (ret)
 			goto err;
