@@ -919,7 +919,7 @@ static void __search_bindmounts(struct mount_info *m)
 		return;
 
 	for (t = m->next; t; t = t->next) {
-		if (mounts_sb_equal(m, t)) {
+		if (m->s_dev && m->s_dev == t->s_dev) {
 			list_add(&t->mnt_bind, &m->mnt_bind);
 			pr_debug("\tThe mount %3d is bind for %3d (@%s -> @%s)\n",
 				 t->mnt_id, m->mnt_id,
@@ -929,6 +929,15 @@ static void __search_bindmounts(struct mount_info *m)
 
 	if (list_empty(&m->mnt_bind))
 		m->mnt_no_bind = true;
+}
+
+static void search_bindmounts(void)
+{
+	struct mount_info *mi;
+
+	for (mi = mntinfo; mi; mi = mi->next) {
+		__search_bindmounts(mi);
+	}
 }
 
 static int resolve_shared_mounts(struct mount_info *info, int root_master_id)
@@ -974,8 +983,6 @@ static int resolve_shared_mounts(struct mount_info *info, int root_master_id)
 				list_add(&t->mnt_share, &m->mnt_share);
 			}
 		}
-
-		__search_bindmounts(m);
 
 		/*
 		 * If we haven't already determined this mount is external,
@@ -1547,6 +1554,7 @@ static __maybe_unused int add_cr_time_mount(struct mount_info *root, char *fsnam
 			break;
 	}
 
+	mi->mnt_no_bind = true;
 	mi->nsid = parent->nsid;
 	mi->parent = parent;
 	mi->parent_mnt_id = parent->mnt_id;
@@ -3269,12 +3277,15 @@ static int populate_mnt_ns(void)
 {
 	int ret;
 
+	search_bindmounts();
+
 	root_yard_mp = mnt_entry_alloc(true);
 	if (!root_yard_mp)
 		return -1;
 
 	root_yard_mp->mountpoint = mnt_roots;
 	root_yard_mp->mounted = true;
+	root_yard_mp->mnt_no_bind = true;
 
 	mntinfo_add_list_before(&mntinfo, root_yard_mp);
 
@@ -3713,6 +3724,8 @@ int collect_mnt_namespaces(bool for_dump)
 	ret = walk_namespaces(&mnt_ns_desc, collect_mntns, &arg);
 	if (ret)
 		goto err;
+
+	search_bindmounts();
 
 #ifdef CONFIG_BINFMT_MISC_VIRTUALIZED
 	if (for_dump && !opts.has_binfmt_misc) {
