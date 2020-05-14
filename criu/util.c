@@ -1487,3 +1487,55 @@ int cut_path_ending(char *path, char *ending)
 	path[ending_pos - 1] = 0;
 	return 0;
 }
+
+/*
+ * This function cuts sub_path from the path.
+ * 1) It asumes all relative paths given are relative to "/":
+ * 	/a/b/c is the same as a/b/c
+ * 2) It can handle paths with multiple consequent slashes:
+ * 	///a///b///c is the same as /a/b/c
+ * 3) It always returns relative path, with no leading slash:
+ * 	get_relative_path("/a/b/c", "/") would be "a/b/c"
+ * 	get_relative_path("/a/b/c", "/a/b") would be "c"
+ * 	get_relative_path("/", "/") would be ""
+ * 4) It can handle paths with single dots:
+ * 	get_relative_path("./a/b", "a/") would be "b"
+ * 5) Note ".." in paths are not supported and handled as normal directory name
+ */
+char *get_relative_path(char *path, char *sub_path)
+{
+	bool skip_slashes = true;
+
+	while (1) {
+		if ((*path == '/' || *path == '\0') &&
+		    (*sub_path == '/' || *sub_path == '\0'))
+			skip_slashes = true;
+
+		if (skip_slashes) {
+			while (*path == '/' ||
+			       (path[0] == '.' && (path[1] == '/' ||
+						   path[1] == '\0')))
+				path++;
+			while (*sub_path == '/' ||
+			       (sub_path[0] == '.' && (sub_path[1] == '/' ||
+						       sub_path[1] == '\0')))
+				sub_path++;
+		}
+
+		if (*sub_path == '\0') {
+			if (skip_slashes)
+				return path;
+			return NULL;
+		}
+		skip_slashes = false;
+
+		if (*path == '\0')
+			return NULL;
+
+		if (*path != *sub_path)
+			return NULL;
+
+		path++;
+		sub_path++;
+	}
+}
