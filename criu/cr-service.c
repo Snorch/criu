@@ -701,6 +701,9 @@ static int setup_opts_from_req(int sk, CriuOpts *req)
 			goto err;
 	}
 
+	if (req->mounts_v2)
+		opts.mounts_v2 = true;
+
 	log_set_loglevel(opts.log_level);
 	if (check_options())
 		goto err;
