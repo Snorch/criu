@@ -622,6 +622,19 @@ static bool mnt_is_root_bind(struct mount_info *mi)
 	return mnt_bind_pick(mi, __mnt_is_root_bind);
 }
 
+static bool __mnt_is_external_bind_nodev(struct mount_info *mi, struct mount_info *bind)
+{
+	if (bind->external && !mnt_is_dev_external(bind) && is_sub_path(mi->root, bind->root))
+		return true;
+
+	return false;
+}
+
+struct mount_info *mnt_get_external_bind_nodev(struct mount_info *mi)
+{
+	return mnt_bind_pick(mi, __mnt_is_external_bind_nodev);
+}
+
 /*
  * Having two children with same mountpoint is unsupported. That can happen in
  * case of mount propagation inside of shared mounts, in that case it is hard
