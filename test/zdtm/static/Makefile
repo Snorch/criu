@@ -389,6 +389,7 @@ TST_DIR		=				\
 		symlink				\
 		symlink01			\
 		unbindable			\
+		mount_complex_sharing		\
 
 TST_DIR_FILE	=				\
 		chroot				\
