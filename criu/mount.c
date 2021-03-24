@@ -627,8 +627,6 @@ static int validate_children_collision(struct mount_info *mnt)
 	return 0;
 }
 
-static struct mount_info *mnt_get_root(struct mount_info *m);
-
 int validate_mounts(struct mount_info *info, bool for_dump)
 {
 	struct mount_info *m, *t;

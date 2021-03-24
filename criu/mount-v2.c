@@ -884,8 +884,8 @@ static int remove_source_of_deleted_mount(struct mount_info *mi)
 		}
 	}
 
-	if (mi->deleted_level && rm_parent_dirs(-1, root, mi->deleted_level))
-		return -1;
+	if (mi->deleted_level)
+		rm_parent_dirs(-1, root, mi->deleted_level);
 
 	return 0;
 }

@@ -215,17 +215,15 @@ extern int fetch_rt_stat(struct mount_info *m, const char *where);
 extern int print_ns_root(struct ns_id *ns, int remap_id, char *buf, int bs);
 extern void search_bindmounts(void);
 extern int merge_mount_trees(struct mount_info *root_yard);
-extern struct mount_info
-__maybe_unused *add_cr_time_mount(struct mount_info *root, char *fsname,
-				  const char *path, unsigned int s_dev,
-				  bool rst);
+extern int __maybe_unused add_cr_time_mount(struct mount_info *root,
+		char *fsname, const char *path, unsigned int s_dev, bool rst);
 extern int validate_mounts(struct mount_info *info, bool for_dump);
 extern int mnt_tree_for_each(struct mount_info *start,
 			     int (*fn)(struct mount_info *));
 extern int cr_pivot_root(char *root);
 extern void set_is_overmounted(void);
 
-struct mount_info *root_yard_mp;
-char *mnt_roots;
+extern struct mount_info *root_yard_mp;
+extern char *mnt_roots;
 
 #endif /* __CR_MOUNT_H__ */
