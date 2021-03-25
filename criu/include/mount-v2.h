@@ -6,7 +6,7 @@
 #include "common/list.h"
 #include "mount.h"
 
-#define MS_SET_GROUP (1<<26)
+#define MOVE_MOUNT_SET_GROUP            0x00000144 /* Set sharing group instead */
 
 struct sharing_group {
 	/* This pair identifies the group */

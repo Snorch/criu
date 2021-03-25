@@ -713,6 +713,13 @@ static int assemble_tree_from_plain_mounts(struct ns_id *nsid)
 	return mnt_tree_for_each(nsid->mnt.mntinfo_tree, move_mount_to_tree);
 }
 
+static inline int sys_move_mount(int from_dirfd, const char *from_pathname,
+				 int to_dirfd, const char *to_pathname,
+				 unsigned int flags) {
+	return syscall(SYS_move_mount, from_dirfd, from_pathname, to_dirfd,
+		       to_pathname, flags);
+}
+
 static int restore_one_sharing_group(struct sharing_group *sg)
 {
 	struct mount_info *first, *other;
@@ -753,14 +760,26 @@ static int restore_one_sharing_group(struct sharing_group *sg)
 			source = sg->source;
 		}
 
-		/* Copy shared_id of the source */
-		if (mount(source, first_path, NULL, MS_SET_GROUP, NULL)) {
-			pr_perror("Failed to copy sharing from %s to %d",
-				  source, first->mnt_id);
-			close(first_fd);
-			if (sfd >= 0)
-				close(sfd);
-			return -1;
+		if (sfd != -1) {
+			/* Copy shared_id of the source */
+			if (sys_move_mount(sfd, "", first_fd, "", MOVE_MOUNT_SET_GROUP)) {
+				pr_perror("Failed to copy sharing from %s to %d",
+					  source, first->mnt_id);
+				close(first_fd);
+				if (sfd >= 0)
+					close(sfd);
+				return -1;
+			}
+		} else {
+			/* Copy shared_id of the source */
+			if (sys_move_mount(-1, source, first_fd, "", MOVE_MOUNT_SET_GROUP)) {
+				pr_perror("Failed to copy sharing from %s to %d",
+					  source, first->mnt_id);
+				close(first_fd);
+				if (sfd >= 0)
+					close(sfd);
+				return -1;
+			}
 		}
 
 		/* Convert shared_id to master_id */
@@ -801,7 +820,7 @@ static int restore_one_sharing_group(struct sharing_group *sg)
 			 "/proc/self/fd/%d", mntfd);
 
 		/* Copy shared_id of the source */
-		if (mount(first_path, mntfd_path, NULL, MS_SET_GROUP, NULL)) {
+		if (sys_move_mount(first_fd, "", mntfd, "", MOVE_MOUNT_SET_GROUP)) {
 			pr_perror("Failed to copy sharing from %d to %d",
 				  first->mnt_id, other->mnt_id);
 			close(mntfd);
