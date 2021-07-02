@@ -720,14 +720,30 @@ static inline int sys_move_mount(int from_dirfd, const char *from_pathname,
 		       to_pathname, flags);
 }
 
+static struct mount_info *get_first_mount(struct sharing_group *sg)
+{
+	struct mount_info *first = NULL, *tmp;
+	int min_len;
+
+	list_for_each_entry(tmp, &sg->mnt_list, mnt_sharing) {
+		int len = strlen(tmp->root);
+
+		if (!first || len < min_len) {
+			first = tmp;
+			min_len = len;
+		}
+	}
+
+	return first;
+}
+
 static int restore_one_sharing_group(struct sharing_group *sg)
 {
 	struct mount_info *first, *other;
 	char first_path[PATH_MAX];
 	int first_fd;
 
-	first = list_first_entry(&sg->mnt_list,
-			    struct mount_info, mnt_sharing);
+	first = get_first_mount(sg);
 	first_fd = fdstore_get(first->mnt_fd_id);
 	BUG_ON(first_fd < 0);
 	snprintf(first_path, sizeof(first_path),
@@ -741,8 +757,7 @@ static int restore_one_sharing_group(struct sharing_group *sg)
 		if (sg->parent) {
 			struct mount_info *p;
 
-			p = list_first_entry(&sg->parent->mnt_list,
-					     struct mount_info, mnt_sharing);
+			p = get_first_mount(sg->parent);
 			sfd = fdstore_get(p->mnt_fd_id);
 			BUG_ON(sfd < 0);
 			snprintf(_source, sizeof(_source),
