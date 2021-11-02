@@ -1792,48 +1792,47 @@ out:
 	return ret;
 }
 
-/*
- * FIXME these function changes path string in place, if this string is used
- * simultaneousely in multiple processes we can have a race. Do we need strdup?
- */
 static int rm_parent_dirs(int mntns_root, char *path, int count)
 {
-	char *p, *prev = NULL;
-	int ret = -1;
+	char *p, *prev = NULL, *_path;
+	int ret = -1, _count = count;
 
 	if (!count)
 		return 0;
 
-	while (count-- > 0) {
-		p = strrchr(path, '/');
-		if (p) {
-			/* We don't handle "//" in path */
-			BUG_ON(prev && (prev - p == 1));
-			*p = '\0';
-		} else {
+	_path = strdup(path);
+	if (!_path) {
+		pr_perror("Failed to duplicate path: %s", path);
+		goto err;
+	}
+
+	while (_count > 0) {
+		p = strrchr(_path, '/');
+		if (!p)
 			/* Inconsistent path and count */
-			pr_perror("Can't strrchr \"/\" in \"%s\"/\"%s\"]"
-				  " left count=%d\n",
-				  path, prev ? prev + 1 : "", count + 1);
+			pr_perror("Can't strrchr \"/\" in \"%s\" count=%d left=%d\n", path, count, _count + 1);
 			goto err;
 		}
 
-		if (prev)
-			*prev = '/';
+		*p = '\0';
+		if (prev && prev - p == 1) {
+			prev = p;
+			continue;
+		}
 		prev = p;
+		_count--;
 
-		if (unlinkat(mntns_root, path, AT_REMOVEDIR)) {
-			pr_perror("Can't remove %s AT %d", path, mntns_root);
+		if (unlinkat(mntns_root, _path, AT_REMOVEDIR)) {
+			pr_perror("Can't remove %s AT %d", _path, mntns_root);
 			goto err;
 		}
-		pr_debug("Unlinked parent dir: %s AT %d\n", path, mntns_root);
+		pr_debug("Unlinked parent dir: %s AT %d\n", _path, mntns_root);
 	}
 
 	ret = 0;
 err:
-	if (prev)
-		*prev = '/';
 
+	xfree(_path);
 	return ret;
 }
 
