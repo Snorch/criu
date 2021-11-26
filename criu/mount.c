@@ -2854,6 +2854,7 @@ struct mount_info *mnt_entry_alloc(bool rst)
 		new->is_overmounted = -1;
 		INIT_LIST_HEAD(&new->children);
 		INIT_LIST_HEAD(&new->siblings);
+		INIT_LIST_HEAD(&new->mnt_slave);
 		INIT_LIST_HEAD(&new->mnt_slave_list);
 		INIT_LIST_HEAD(&new->mnt_share);
 		INIT_LIST_HEAD(&new->mnt_bind);
