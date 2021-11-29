@@ -923,6 +923,28 @@ static void search_bindmounts(void)
 		__search_bindmounts(mi);
 }
 
+struct mount_info *mnt_bind_pick(struct mount_info *mi, bool (*pick)(struct mount_info *mi, struct mount_info *bind))
+{
+	struct mount_info *bind;
+
+	BUG_ON(!mi);
+
+	if (pick(mi, mi))
+		return mi;
+
+	/*
+	 * Shouldn't use mnt_bind list before it was setup in
+	 * __search_bindmounts
+	 */
+	BUG_ON(list_empty(&mi->mnt_bind) && !mi->mnt_no_bind);
+
+	list_for_each_entry(bind, &mi->mnt_bind, mnt_bind)
+		if (pick(mi, bind))
+			return bind;
+
+	return NULL;
+}
+
 static int resolve_shared_mounts(struct mount_info *info, int root_master_id)
 {
 	struct mount_info *m, *t;
