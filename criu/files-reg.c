@@ -2089,11 +2089,11 @@ int open_path(struct file_desc *d, int (*open_cb)(int mntns_root, struct reg_fil
 
 			if (rfi_remap(rfi, &level)) {
 				pr_perror("Can't create even fake link!");
-				goto err;
+				goto err_with_unlock;
 			}
 		} else if (ret < 0) {
 			pr_perror("Can't link %s -> %s", rfi->remap->rpath, rfi->path);
-			goto err;
+			goto err_with_unlock;
 		}
 	}
 
@@ -2103,7 +2103,7 @@ ext:
 	if (tmp < 0) {
 		pr_perror("Can't open file %s", rfi->path);
 		close_safe(&inh_fd);
-		goto err;
+		goto err_with_unlock;
 	}
 	close_safe(&inh_fd);
 
@@ -2112,15 +2112,15 @@ ext:
 
 		if (fstat(tmp, &st) < 0) {
 			pr_perror("Can't fstat opened file");
-			goto err;
+			goto err_with_unlock;
 		}
 
 		if (!validate_file(tmp, &st, rfi))
-			goto err;
+			goto err_with_unlock;
 
 		if (rfi->rfe->has_mode && (st.st_mode != rfi->rfe->mode)) {
 			pr_err("File %s has bad mode 0%o (expect 0%o)\n", rfi->path, (int)st.st_mode, rfi->rfe->mode);
-			goto err;
+			goto err_with_unlock;
 		}
 
 		/*
@@ -2136,15 +2136,15 @@ ext:
 			struct mount_info *mi = lookup_mnt_id(rfi->rfe->mnt_id);
 
 			if (mi && try_remount_writable(mi, true))
-				goto err;
+				goto err_with_unlock;
 
 			pr_debug("Unlink: %d:%s\n", rfi->rfe->mnt_id, rfi->path);
 			if (unlinkat(mntns_root, rfi->path, 0)) {
 				pr_perror("Failed to unlink the remap file");
-				goto err;
+				goto err_with_unlock;
 			}
 			if (rm_parent_dirs(mntns_root, rfi->path, level))
-				goto err;
+				goto err_with_unlock;
 		}
 
 		mutex_unlock(remap_open_lock);
@@ -2158,7 +2158,7 @@ ext:
 	}
 
 	return tmp;
-err:
+err_with_unlock:
 	if (rfi->remap)
 		mutex_unlock(remap_open_lock);
 	close_safe(&tmp);
