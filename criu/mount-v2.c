@@ -986,9 +986,38 @@ static int restore_one_sharing_group(struct sharing_group *sg)
 		if (other == first)
 			continue;
 
-		if (move_mount_set_group(first->mnt_fd_id, NULL, other->mnt_fd_id)) {
-			pr_err("Failed to copy sharing from %d to %d\n", first->mnt_id, other->mnt_id);
-			return -1;
+		/* W/a for no "wider" root with external mounts */
+		if (!is_sub_path(other->root, first->root)) {
+			if (!sg->parent && !sg->shared_id) {
+				char other_path[PATH_MAX];
+				int other_fd;
+
+				if (move_mount_set_group(-1, sg->source, other->mnt_fd_id)) {
+					pr_err("Failed to copy sharing from source %s to %d\n", sg->source,
+					       other->mnt_id);
+					return -1;
+				}
+
+				other_fd = fdstore_get(other->mnt_fd_id);
+				BUG_ON(other_fd < 0);
+				snprintf(other_path, sizeof(other_path), "/proc/self/fd/%d", other_fd);
+
+				if (mount(NULL, other_path, NULL, MS_SLAVE, NULL)) {
+					pr_perror("Failed to make mount %d slave", other->mnt_id);
+					close(other_fd);
+					return -1;
+				}
+				close(other_fd);
+			} else {
+				pr_err("Can't copy sharing from %d[%s] to %d[%s]\n", first->mnt_id, first->root,
+				       other->mnt_id, other->root);
+				return -1;
+			}
+		} else {
+			if (move_mount_set_group(first->mnt_fd_id, NULL, other->mnt_fd_id)) {
+				pr_err("Failed to copy sharing from %d to %d\n", first->mnt_id, other->mnt_id);
+				return -1;
+			}
 		}
 	}
 
