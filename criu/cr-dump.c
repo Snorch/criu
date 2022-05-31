@@ -781,7 +781,8 @@ static int dump_task_core_all(struct parasite_ctl *ctl, struct pstree_item *item
 	core->thread_core->creds->lsm_profile = dmpi(item)->thread_lsms[0]->profile;
 	core->thread_core->creds->lsm_sockcreate = dmpi(item)->thread_lsms[0]->sockcreate;
 
-	ret = parasite_dump_thread_leader_seized(ctl, pid, core);
+	ret = parasite_dump_thread_leader_seized(ctl,
+			pid, core);
 	if (ret)
 		goto err;
 
