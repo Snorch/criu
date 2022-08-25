@@ -13,6 +13,8 @@
 #include <sys/capability.h>
 #include <sys/mount.h>
 #include <elf.h>
+#include <linux/fiemap.h>
+#include <linux/fs.h>
 
 #ifndef SEEK_DATA
 #define SEEK_DATA 3
@@ -217,6 +219,73 @@ static int copy_file_to_chunks(int fd, struct cr_img *img, size_t file_size)
 
 		if (copy_chunk_from_file(fd, img_raw_fd(img), ce.off, ce.len))
 			return -1;
+		pr_perror("sendfile wrong: %ld+%ld", ce.off, ce.len);
+
+	}
+
+	return 0;
+}
+
+static int copy_file_to_chunks_fiemap(int fd, struct cr_img *img, size_t file_size)
+{
+	GhostChunkEntry ce = GHOST_CHUNK_ENTRY__INIT;
+	struct fiemap *fiemap;
+	int ret = 0;
+	long long extents_size;
+	long long i = 0;
+
+	fiemap = xzalloc(sizeof(struct fiemap));
+	if (!fiemap) {
+		pr_perror("Out of memory when allocating fiemap");
+		return -1;
+	}
+
+	fiemap->fm_length = ~0; /* Lazy */
+
+	/* Find out how many extents there are */
+	ret = ioctl(fd, FS_IOC_FIEMAP, fiemap);
+	if (ret < 0) {
+		xfree(fiemap);
+		pr_perror("fiemap ioctl() failed");
+		return ret;
+	}
+
+	/* Read in the extents */
+	extents_size = sizeof(struct fiemap_extent) * (fiemap->fm_mapped_extents);
+
+	/* Resize fiemap to allow us to read in the extents */
+	ret = xrealloc_safe(&fiemap, sizeof(struct fiemap) + extents_size);
+	if (ret) {
+		xfree(fiemap);
+		pr_perror("Out of memory reallocating fiemap");
+		return -1;
+	}
+
+	memset(fiemap->fm_extents, 0, extents_size);
+	fiemap->fm_extent_count = fiemap->fm_mapped_extents;
+	fiemap->fm_mapped_extents = 0;
+
+	if (ioctl(fd, FS_IOC_FIEMAP, fiemap) < 0) {
+		xfree(fiemap);
+		pr_perror("fiemap ioctl() failed");
+		return -1;
+	}
+
+	for (i = 0; i < fiemap->fm_mapped_extents; i++) {
+		ce.len = fiemap->fm_extents[i].fe_length;
+		ce.off = fiemap->fm_extents[i].fe_logical;
+
+		if (pb_write_one(img, &ce, PB_GHOST_CHUNK)) {
+			xfree(fiemap);
+			return -1;
+		}
+
+		if (copy_chunk_from_file(fd, img_raw_fd(img), ce.off, ce.len)) {
+			// pr_perror("sendfile wrong: %ld+%ld", ce.off, ce.len);
+			// pr_perror("extent=%d, i=%lld", fiemap->fm_mapped_extents, i);
+			xfree(fiemap);
+			return -1;
+		}
 	}
 
 	return 0;
@@ -917,10 +986,21 @@ static int dump_ghost_file(int _fd, u32 id, const struct stat *st, dev_t phys_de
 			goto err_out;
 		}
 
-		if (gfe.chunks)
-			ret = copy_file_to_chunks(fd, img, st->st_size);
-		else
+		if (gfe.chunks){
+			if (opts.use_fiemap){
+				ret = copy_file_to_chunks_fiemap(fd, img, st->st_size);
+				if(ret == -EOPNOTSUPP){
+					pr_debug("file system don't support fiemap");
+					ret = copy_file_to_chunks(fd, img, st->st_size);
+				}
+			}
+			else{
+				ret = copy_file_to_chunks(fd, img, st->st_size);
+			}
+		}
+		else{
 			ret = copy_file(fd, img_raw_fd(img), st->st_size);
+		}
 		close(fd);
 		if (ret)
 			goto err_out;
