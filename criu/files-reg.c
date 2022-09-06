@@ -168,9 +168,12 @@ static int copy_chunk_from_file(int fd, int img, off_t off, size_t len)
 
 	while (len > 0) {
 		ret = sendfile(img, fd, &off, len);
-		if (ret <= 0) {
+		if (ret < 0) {
 			pr_perror("Can't send ghost to image");
 			return -1;
+		}
+		if (ret == 0) {
+			break;
 		}
 
 		len -= ret;
@@ -229,10 +232,13 @@ static int copy_chunk_to_file(int img, int fd, off_t off, size_t len)
 			return -1;
 		}
 
-		if (opts.stream)
+		if (opts.stream) {
 			ret = splice(img, NULL, fd, NULL, len, SPLICE_F_MOVE);
-		else
+		} else {
 			ret = sendfile(fd, img, NULL, len);
+			if (ret == 0)
+				break;
+		}
 		if (ret < 0) {
 			pr_perror("Can't send data");
 			return -1;
