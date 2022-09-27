@@ -143,6 +143,8 @@ int main(int argc, char **argv)
 
 	printf("Checking the victim alive\n");
 	pass = chk(p_out[0], 1);
+	if (!pass)
+		return 1;
 	pass = chk(p_out[0], 42);
 	if (!pass)
 		return 1;
@@ -176,12 +178,10 @@ int main(int argc, char **argv)
 	printf("Checking the result\n");
 
 	/* These two came from parasite */
-	pass = chk(p_out[0], 138);
-	pass = chk(p_out[0], 403);
+	pass = chk(p_out[0], 138) && chk(p_out[0], 403);
 
 	/* These two came from post-infect */
-	pass = chk(p_out[0], 1234);
-	pass = chk(p_out[0], 4096);
+	pass = pass && chk(p_out[0], 1234) && chk(p_out[0], 4096);
 
 	if (pass)
 		printf("All OK\n");
