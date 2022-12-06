@@ -81,6 +81,12 @@ enum FILE_VALIDATION_OPTIONS
 /* This constant dictates which file validation method should be tried by default. */
 #define FILE_VALIDATION_DEFAULT			FILE_VALIDATION_BUILD_ID
 
+enum {
+	NFTABLES_MODE_IPT,
+	NFTABLES_MODE_NFT,
+};
+#define NFTABLES_MODE_DEFAULT NFTABLES_MODE_IPT
+
 struct irmap;
 
 struct irmap_path_opt {
