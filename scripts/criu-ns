@@ -70,7 +70,15 @@ def _wait_for_process_status(criu_pid):
         try:
             (pid, status) = os.wait()
             if pid == criu_pid:
-                return os.waitstatus_to_exitcode(status)
+                if os.WIFSIGNALED(status):
+                    return os.WTERMSIG(status)
+                elif os.WIFEXITED(status):
+                    return os.WEXITSTATUS(status)
+                elif os.WIFSTOPPED(status):
+                    return os.WSTOPSIG(status)
+                else:
+                    raise Exception("CRIU was terminated by an "
+                                    "unidentified reason")
         except OSError:
             return -251
 
@@ -80,8 +88,21 @@ def run_criu(args):
     Spawn CRIU binary
     """
     print(sys.argv)
-    os.execlp('criu', *['criu'] + args)
-    raise OSError(errno.ENOENT, "No such command")
+
+    if "--criu-binary" in args:
+        try:
+            path_index = args.index("--criu-binary") + 1
+            path = args[path_index]
+            args.remove("--criu-binary")
+            args.pop(path_index - 1)
+            args.insert(0, "criu")
+            os.execv(path, args)
+            raise OSError(errno.ENOENT, "No such command")
+        except (ValueError, IndexError, FileNotFoundError):
+            raise OSError(errno.ENOENT, "--criu-binary missing argument")
+    else:
+        os.execlp("criu", *["criu"] + args)
+        raise OSError(errno.ENOENT, "No such command")
 
 
 # pidns_holder creates a process that is reparented to the init.
