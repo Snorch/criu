@@ -25,6 +25,49 @@ def check_dumpdir(path=IMG_DIR):
     os.mkdir(path, 0o755)
 
 
+def run_task_with_own_pty(task):
+    m, s = pty.openpty()
+
+    pid = os.fork()
+    if pid == 0:
+        os.close(m)
+        os.setsid()
+        os.dup2(s, 0)
+        os.dup2(s, 1)
+        os.dup2(s, 2)
+        fcntl.ioctl(s, termios.TIOCSCTTY, 1)
+        os.close(s)
+        task()
+        exit(0)
+
+    os.close(s)
+    m = os.fdopen(m, 'rb')
+    os.set_blocking(m.fileno(), False)
+    while True:
+        try:
+            data = m.read()
+        except:
+            break
+        if data != None:
+            print(data.decode('utf-8'))
+
+    _, status = os.waitpid(pid, 0)
+
+    try:
+        data = m.read()
+    except:
+        pass
+    if data != None:
+        print(data.decode('utf-8'))
+    m.close()
+
+    if status != 0:
+        print("task %s exited badly: %d" % (task.__name__, status))
+        exit(1)
+
+    return 0
+
+
 def create_pty():
     fd_m, fd_s = pty.openpty()
     return (os.fdopen(fd_m, "wb"), os.fdopen(fd_s, "wb"))
@@ -184,9 +227,12 @@ def test_dump_and_restore_in_pidns():
     _re_restore()
 
 
-if __name__ == "__main__":
-    os.setsid()
+def main():
     test_dump_and_restore_with_shell_job()
     test_dump_and_restore_without_shell_job()
     test_dump_and_restore_without_shell_job(restore_detached=True)
     test_dump_and_restore_in_pidns()
+
+
+if __name__ == "__main__":
+    run_task_with_own_pty(main)
