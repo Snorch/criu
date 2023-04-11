@@ -7,6 +7,8 @@ import shutil
 import subprocess
 import sys
 import time
+import fcntl
+import termios
 
 
 CRIU_BIN = "../../../criu/criu"
@@ -18,6 +20,58 @@ def check_dumpdir():
     if os.path.isdir(IMG_DIR):
         shutil.rmtree(IMG_DIR)
     os.mkdir(IMG_DIR, 0o755)
+
+
+def run_task_with_own_pty(task, nologs=False):
+    fd_m, fd_s = pty.openpty()
+    m, s = os.fdopen(fd_m, "r+b", buffering=0), os.fdopen(fd_s, "r+b", buffering=0)
+
+    pid = os.fork()
+    if pid == 0:
+        m.close()
+        os.setsid()
+        os.dup2(s.fileno(), 0)
+        os.dup2(s.fileno(), 1)
+        os.dup2(s.fileno(), 2)
+        fcntl.ioctl(s.fileno(), termios.TIOCSCTTY, 1)
+        s.close()
+        task()
+        exit(0)
+
+    if nologs:
+        s.close()
+        m.close()
+        return pid
+
+    os.set_blocking(m.fileno(), False)
+    s.close()
+    output = b""
+    while True:
+        try:
+            data = m.read()
+        except:
+            break
+        if data != None:
+            output += data
+
+    _, status = os.waitpid(pid, 0)
+
+    try:
+        data = m.read()
+    except:
+        pass
+    if data != None:
+        output += data
+    m.close()
+
+    if status != 0:
+        print("task %s exited badly: %d" % (task.__name__, status))
+        print("----------------------")
+        print(output.decode('utf-8'))
+        print("----------------------")
+        exit(1)
+
+    return 0
 
 
 def create_pty():
@@ -54,7 +108,6 @@ def criu_ns_restore(shell_job=False, restore_detached=False):
 
 def test_dump_and_restore_with_shell_job():
     check_dumpdir()
-    os.setsid()
 
     with open("running", "w") as file:
         pass
@@ -180,9 +233,12 @@ def test_dump_and_restore_pidns():
         rr_process.join()
 
 
-if __name__ == "__main__":
+def main():
     test_dump_and_restore_with_shell_job()
     test_dump_and_restore_without_shell_job()
     test_dump_and_restore_without_shell_job(restore_detached=True)
     test_dump_and_restore_pidns()
-    sys.exit(0)
+
+
+if __name__ == "__main__":
+    run_task_with_own_pty(main)
