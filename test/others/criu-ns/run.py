@@ -76,7 +76,7 @@ def read_log_file(filename):
 
 
 def test_dump_and_restore_with_shell_job():
-    """Test criu-ns dump and restore with --shell-job option"""
+    print("Test criu-ns dump and restore with --shell-job option")
     check_dumpdir()
     pathlib.Path("running").touch()
     pid = os.fork()
@@ -110,7 +110,7 @@ def test_dump_and_restore_with_shell_job():
 
 
 def test_dump_and_restore_without_shell_job(restore_detached=False):
-    """Test criu-ns dump and restore with an isolated process"""
+    print("Test criu-ns dump and restore with an isolated process (%d)" % restore_detached)
     check_dumpdir()
     pid = create_isolated_dumpee()
     ret = criu_ns_dump(pid)
@@ -134,7 +134,7 @@ def test_dump_and_restore_without_shell_job(restore_detached=False):
 
 
 def test_dump_and_restore_in_pidns():
-    """Test criu-ns dump and restore in namespaces"""
+    print("Test criu-ns dump and restore in namespaces")
     def _dump():
         pid = create_isolated_dumpee()
         ret = criu_ns_dump(pid)
