@@ -121,7 +121,6 @@ def test_dump_and_restore_without_shell_job(restore_detached=False):
     if not restore_detached:
         os.unlink("running")
 
-    fd_m, fd_s = create_pty()
     pid = os.fork()
     if pid == 0:
         os.setsid()
@@ -131,8 +130,6 @@ def test_dump_and_restore_without_shell_job(restore_detached=False):
             sys.exit(ret)
         os._exit(0)
 
-    fd_m.close()
-    fd_s.close()
     os.waitpid(pid, 0)
 
 
