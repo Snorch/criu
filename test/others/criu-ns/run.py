@@ -45,7 +45,7 @@ def create_isolated_dumpee():
                 sys.exit(0)
             time.sleep(1)
     fd_m.close()
-    return (pid, fd_s)
+    return pid
 
 
 def criu_ns_dump(pid, shell_job=False):
@@ -111,7 +111,7 @@ def test_dump_and_restore_with_shell_job():
 def test_dump_and_restore_without_shell_job(restore_detached=False):
     """Test criu-ns dump and restore with an isolated process"""
     check_dumpdir()
-    pid, fd_s = create_isolated_dumpee()
+    pid = create_isolated_dumpee()
     ret = criu_ns_dump(pid)
     if ret != 0:
         read_log_file(DUMP_LOG)
@@ -138,7 +138,7 @@ def test_dump_and_restore_without_shell_job(restore_detached=False):
 def test_dump_and_restore_in_pidns():
     """Test criu-ns dump and restore in namespaces"""
     def _dump():
-        pid, fd_s = create_isolated_dumpee()
+        pid = create_isolated_dumpee()
         ret = criu_ns_dump(pid)
         if ret != 0:
             read_log_file(DUMP_LOG)
