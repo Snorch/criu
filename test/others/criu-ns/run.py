@@ -45,6 +45,7 @@ def create_isolated_dumpee():
                 sys.exit(0)
             time.sleep(1)
     fd_m.close()
+    fd_s.close()
     return pid
 
 
