@@ -30,11 +30,21 @@ jobs:
         if [ -z "${{github.base_ref}}" ]; then
           git fetch --deepen=1 &&
           if ! make indent OPTS=--diff; then
-            exit 1
+            github.event.pull_request.addLabels({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: ["failed-indent-check"]
+            })
           fi
         else
           git fetch origin ${{github.base_ref}} &&
           if ! make indent OPTS=--diff BASE=origin/${{github.base_ref}}; then
-            exit 1
+            github.event.pull_request.addLabels({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: ["failed-indent-check"]
+            })
           fi
         fi
