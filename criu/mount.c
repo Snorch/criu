@@ -4233,7 +4233,7 @@ static struct mount_info *mnt_subtree_next(struct mount_info *mi, struct mount_i
 		return list_entry(mi->children.next, struct mount_info, siblings);
 
 	while (mi->parent && mi != root) {
-		if (mi->siblings.next == &mi->parent->children)
+			if (mi->siblings.next == &mi->parent->children)
 			mi = mi->parent;
 		else
 			return list_entry(mi->siblings.next, struct mount_info, siblings);

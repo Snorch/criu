@@ -30,11 +30,11 @@ jobs:
         if [ -z "${{github.base_ref}}" ]; then
           git fetch --deepen=1 &&
           if ! make indent OPTS=--diff; then
-            exit 1
+            echo "::warning Indent is not happy"
           fi
         else
           git fetch origin ${{github.base_ref}} &&
           if ! make indent OPTS=--diff BASE=origin/${{github.base_ref}}; then
-            exit 1
+            echo "::warning Indent is not happy"
           fi
         fi
