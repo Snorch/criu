@@ -37,9 +37,4 @@ jobs:
         fi
     - name: Run post make indent
       run: |
-        git diff | ./scripts/diff-to-hunks.py | while IFS= read -r line; do
-          WFILE="${line% *}"
-          WLINE="${line#* }"
-          WLINE="$((WLINE+3))"
-          echo "::warning file=${WFILE},line=${WLINE}::Indent is unhappy%0Amultiline"
-        done
+        git diff | ./scripts/diff-to-hunks.py
