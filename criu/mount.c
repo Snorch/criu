@@ -95,12 +95,12 @@ int ext_mount_parse_auto(char *key)
 static char *ext_mount_lookup(char *key)
 {
 	char *v;
-	int len = strlen(key);
+int len = strlen(key);
 	char mkey[len + 6];
 
 	sprintf(mkey, "mnt[%s]", key);
 	v = external_lookup_by_key(mkey);
-	if (IS_ERR(v))
+if (IS_ERR(v))
 		v = NULL;
 
 	return v;
@@ -144,7 +144,7 @@ static struct mount_info *__lookup_overlayfs(struct mount_info *list, char *rpat
 	struct mount_info *m;
 	int mntns_root = -1;
 
-	for (m = list; m != NULL; m = m->next) {
+	for (m = list; m != NULL; m = m->next){
 		struct stat f_stat;
 		int ret_stat;
 

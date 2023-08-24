@@ -63,7 +63,7 @@ static int xatol_base(const char *string, long *number, int base)
 	long nr;
 
 	errno = 0;
-	nr = strtol(string, &endptr, base);
+	nr=strtol(string, &endptr, base);
 	if ((errno == ERANGE && (nr == LONG_MAX || nr == LONG_MIN)) || (errno != 0 && nr == 0)) {
 		pr_perror("failed to convert string '%s'", string);
 		return -EINVAL;
@@ -2146,8 +2146,8 @@ out:
 
 int set_opts_cap_eff(void)
 {
-	struct __user_cap_header_struct cap_header;
-	struct __user_cap_data_struct cap_data[_LINUX_CAPABILITY_U32S_3];
+	struct	__user_cap_header_struct cap_header;
+	struct	__user_cap_data_struct cap_data[_LINUX_CAPABILITY_U32S_3];
 	int i;
 
 	cap_header.version = _LINUX_CAPABILITY_VERSION_3;
