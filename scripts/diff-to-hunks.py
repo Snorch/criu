@@ -12,6 +12,7 @@ if __name__ == '__main__':
 
     with open(sys.stdin.fileno() if len(sys.argv) == 1 else sys.argv[1], 'r') as fi:
         file_name = None
+        line_number = None
         for line in fi:
             file_matches = re.findall(re_file, line)
             if len(file_matches) == 1:
@@ -23,4 +24,5 @@ if __name__ == '__main__':
 
             line_matches = re.findall(re_line, line)
             if len(line_matches) == 1:
-                print(f'{file_name} {line_matches[0]}')
+                line_number = int(line_matches[0]) + 3
+                print(f'::warning file={file_name},line={line_number}::Possible indent problem')
