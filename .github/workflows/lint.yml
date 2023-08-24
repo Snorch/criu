@@ -37,10 +37,9 @@ jobs:
         fi
     - name: Run post make indent
       run: |
-        IFS= read -a myarray <<< git diff | ./scripts/diff-to-hunks.py
-        for i in "${myarray[@]}"; do
-          echo "I: $i"
-          echo "Value: ${i#* }"
-          echo "Value: ${i%* }"
+        git diff | ./scripts/diff-to-hunks.py | while IFS= read -r line; do
+          echo "... $line ..."
+          echo "First: ${i#* }"
+          echo "Second: ${i%* }"
         done
         echo "::warning file=criu/mount.c,line=95::WARN ext_mount_lookup"
