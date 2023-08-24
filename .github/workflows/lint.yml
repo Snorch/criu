@@ -41,5 +41,5 @@ jobs:
           WFILE="${line% *}"
           WLINE="${line#* }"
           WLINE="$((WLINE+3))"
-          echo "::warning file=${WFILE},line=${WLINE}::Indent is unhappy"
+          echo "::warning file=${WFILE},line=${WLINE}::Indent is unhappy%0Amultiline"
         done
