@@ -38,8 +38,5 @@ jobs:
     - name: Run post make indent
       run: |
         git diff | ./scripts/diff-to-hunks.py | while IFS= read -r line; do
-          echo "... $line ..."
-          echo "First: ${i#* }"
-          echo "Second: ${i%* }"
+          echo "::warning file=${line% *},line=${line#* }::Indent is unhappy"
         done
-        echo "::warning file=criu/mount.c,line=95::WARN ext_mount_lookup"
