@@ -762,8 +762,10 @@ static int do_mount_one_v2(struct mount_info *mi)
 
 static int populate_mnt_ns_v2(void)
 {
-	if (make_yard(mnt_roots))
+	if (make_yard(mnt_roots)) {
+		pr_err("DEBUG[%s]: Failed to mount tmpfs on %s\n", __func__, mnt_roots);
 		return -1;
+	}
 
 	if (mnt_tree_for_each(root_yard_mp, do_mount_one_v2))
 		return -1;
@@ -1137,8 +1139,10 @@ static int get_empty_mntns(void)
 		goto err;
 	}
 
-	if (make_yard(mnt_roots))
+	if (make_yard(mnt_roots)) {
+		pr_err("DEBUG[%s]: Failed to mount tmpfs on %s\n", __func__, mnt_roots);
 		goto err;
+	}
 
 	if (cr_pivot_root(mnt_roots))
 		goto err;
@@ -1194,8 +1198,10 @@ static int pre_create_mount_namespaces(void)
 			goto err;
 		}
 
-		if (make_yard(mnt_roots))
+		if (make_yard(mnt_roots)) {
+			pr_err("DEBUG[%s]: Failed to mount tmpfs on %s\n", __func__, mnt_roots);
 			goto err;
+		}
 
 		print_ns_root(nsid, 0, path, sizeof(path));
 		if (mkdir(path, 0600)) {

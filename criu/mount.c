@@ -3512,8 +3512,10 @@ static int populate_roots_yard(struct mount_info *cr_time)
 	char path[PATH_MAX];
 	struct ns_id *nsid;
 
-	if (make_yard(mnt_roots))
+	if (make_yard(mnt_roots)) {
+		pr_err("DEBUG[%s]: Failed to mount tmpfs on %s\n", __func__, mnt_roots);
 		return -1;
+	}
 
 	for (nsid = ns_ids; nsid != NULL; nsid = nsid->next) {
 		if (nsid->nd != &mnt_ns_desc)

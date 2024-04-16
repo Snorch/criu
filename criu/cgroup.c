@@ -1887,8 +1887,10 @@ static int prepare_cgroup_sfd(CgroupEntry *ce)
 			return -1;
 		}
 
-		if (make_yard(cg_yard))
+		if (make_yard(cg_yard)) {
+			pr_err("DEBUG[%s]: Failed to mount tmpfs on %s\n", __func__, cg_yard);
 			return -1;
+		}
 	}
 
 	pr_debug("Opening %s as cg yard\n", cg_yard);
