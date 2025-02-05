@@ -34,12 +34,6 @@ int main(int argc, char **argv)
 
 	test_init(argc, argv);
 
-	// Allow GIDs 0-58468 to open an unprivileged ICMP socket
-	if (sysctl_write_str("/proc/sys/net/ipv4/ping_group_range", "0 58468")) {
-		pr_perror("sysctl_write_str() failed");
-		return 1;
-	}
-
 	sock = socket(PF_INET6, SOCK_DGRAM, IPPROTO_ICMPV6);
 	if (sock < 0) {
 		pr_perror("Can't create socket");

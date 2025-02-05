@@ -21,6 +21,7 @@
 
 #include "zdtmtst.h"
 #include "ns.h"
+#include "sysctl.h"
 
 int criu_status_in = -1, criu_status_in_peer = -1, criu_status_out = -1;
 
@@ -165,6 +166,10 @@ static int prepare_namespaces(void)
 	}
 
 	system("ip link set up dev lo");
+
+	// Allow GIDs 0-58468 to open an unprivileged ICMP socket
+	if (sysctl_write_str("/proc/sys/net/ipv4/ping_group_range", "0 58468"))
+		return -1;
 
 	if (prepare_mntns())
 		return -1;

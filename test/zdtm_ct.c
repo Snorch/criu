@@ -3,7 +3,6 @@
 #include <sys/wait.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <string.h>
 #include <sys/mount.h>
 #include <unistd.h>
 #include <time.h>
@@ -92,27 +91,6 @@ static int create_timens(void)
 	return 0;
 }
 
-int sysctl_write_str(const char *name, char *data)
-{
-	int fd, ret;
-
-	fd = open(name, O_WRONLY);
-	if (fd < 0) {
-		fprintf(stderr, "Can't open %s", name);
-		return -1;
-	}
-
-	ret = write(fd, data, strlen(data));
-	if (ret < 0) {
-		fprintf(stderr, "Can't write %s into %s", data, name);
-		close(fd);
-		return -1;
-	}
-	close(fd);
-
-	return 0;
-}
-
 int main(int argc, char **argv)
 {
 	uid_t uid;
@@ -133,9 +111,6 @@ int main(int argc, char **argv)
 	if (pid == 0) {
 		if (!uid) {
 			if (create_timens())
-				exit(1);
-			// Allow GIDs 0-58468 to open an unprivileged ICMP socket
-			if (sysctl_write_str("/proc/sys/net/ipv4/ping_group_range", "0 58468"))
 				exit(1);
 			if (mount(NULL, "/", NULL, MS_REC | MS_SLAVE, NULL)) {
 				fprintf(stderr, "mount(/, S_REC | MS_SLAVE)): %m");
