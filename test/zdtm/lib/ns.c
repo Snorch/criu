@@ -30,6 +30,7 @@ static int prepare_mntns(void)
 	int dfd, ret;
 	char *root, *criu_path, *dev_path;
 	char path[PATH_MAX];
+	char testdir[PATH_MAX];
 
 	root = getenv("ZDTM_ROOT");
 	if (!root) {
@@ -49,6 +50,17 @@ static int prepare_mntns(void)
 
 	if (mount(root, root, NULL, MS_BIND | MS_REC, NULL)) {
 		fprintf(stderr, "Can't bind-mount root: %m\n");
+		return -1;
+	}
+
+	/*
+	 * The mnt_ro_root test makes "/" mount readonly, but we still
+	 * want to write logs to /zdtm/static/ so let's make it separate
+	 * writable mount.
+	 */
+	snprintf(testdir, sizeof(testdir),  "%s/zdtm/static/", root);
+	if (mount(testdir, testdir, NULL, MS_BIND, NULL)) {
+		fprintf(stderr, "Can't bind-mount testdir: %m\n");
 		return -1;
 	}
 
